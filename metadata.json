@@ -1,0 +1,10 @@
+{
+  "name": "EagleRide BC",
+  "description": "A high-reliability ride-sharing platform for Boston College students, featuring intelligent matching, cost sharing, and a robust reliability scoring system.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
