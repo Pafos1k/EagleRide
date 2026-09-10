@@ -47,6 +47,8 @@ test('ride creation is visible in a separate browser context without local ride 
     await pageA.goto('/#/create');
     await pageA.getByPlaceholder('Pickup location').fill('Boston College');
     await pageA.getByPlaceholder('Dropoff location').fill('Logan Airport (BOS)');
+    // Select the suggestion so its overlay no longer covers the terminal buttons.
+    await pageA.getByText('Logan Airport (BOS)', { exact: true }).click();
     await pageA.getByRole('button', { name: 'C', exact: true }).click();
     await pageA.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(pageA.getByRole('heading', { name: /^(Similar rides found|Confirm your ride)$/ })).toBeVisible();
