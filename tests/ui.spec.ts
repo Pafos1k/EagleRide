@@ -65,7 +65,10 @@ test('ride creation is visible in a separate browser context without local ride 
       expect(await page.evaluate(() => localStorage.getItem('er_rides'))).toBeNull();
       expect(await page.evaluate(() => localStorage.getItem('er_participants'))).toBeNull();
     }
-  } finally { await clientA.close(); await clientB.close(); }
+  } finally {
+    // A test timeout may already have closed the contexts; preserve the original failure.
+    await Promise.allSettled([clientA.close(), clientB.close()]);
+  }
 });
 
 test('ride loading failures and not-found states are visible', async ({ page }) => {
