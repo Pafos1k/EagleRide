@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
+import { fileURLToPath } from "node:url";
+import "dotenv/config";
 import { GoogleGenAI, Type } from "@google/genai";
 
 function getGeminiClient(): GoogleGenAI | null {
@@ -20,7 +21,10 @@ function getGeminiClient(): GoogleGenAI | null {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT ?? 3000);
+  if (!Number.isInteger(PORT) || PORT < 0 || PORT > 65535) {
+    throw new Error("PORT must be an integer between 0 and 65535");
+  }
 
   app.use(express.json({ limit: "1mb" }));
 
@@ -121,22 +125,32 @@ Task:
 
   // Vite middleware for development vs static production serving
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = fileURLToPath(new URL("../client/", import.meta.url));
     app.use(express.static(distPath));
     app.use((req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      // HashRouter only needs the document at /. Missing assets and APIs are 404s.
+      if ((req.method === "GET" || req.method === "HEAD") && req.path === "/") {
+        return res.sendFile(path.join(distPath, "index.html"));
+      }
+      res.status(404).json({ error: "Not found" });
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : PORT;
+    console.log(`Server running on http://localhost:${port}`);
   });
 }
 
-startServer();
+startServer().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

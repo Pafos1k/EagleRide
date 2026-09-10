@@ -11,7 +11,7 @@ import {
   ExternalLink, 
   Share2
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, type Variants } from 'motion/react';
 
 const About: React.FC = () => {
   const containerVariants = {
@@ -24,7 +24,7 @@ const About: React.FC = () => {
     }
   };
 
-  const itemVariants = {
+  const itemVariants: Variants = {
     hidden: { y: 20, opacity: 0 },
     visible: {
       y: 0,
