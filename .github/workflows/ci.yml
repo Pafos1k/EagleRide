@@ -8,6 +8,21 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: eagleride
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: eagleride
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eagleride -d eagleride"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://eagleride:test_password@127.0.0.1:5432/eagleride
+      TEST_DATABASE_URL: postgresql://eagleride:test_password@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,6 +34,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      - run: npm run test:db
+      - run: npm run db:migrate
       - run: npx playwright install --with-deps chromium
       - run: npm run test:ui
       - name: Verify production-only dependencies
@@ -27,3 +44,4 @@ jobs:
           npm ls --omit=dev
           test ! -d node_modules/vite
           npm test
+          npm run test:db

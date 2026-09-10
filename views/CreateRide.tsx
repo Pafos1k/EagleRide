@@ -17,22 +17,16 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { useMockStore, CURRENT_USER } from '../store';
+import { createRide, listRides } from '../src/api/rides';
+import type { PersistedRide, RideLocation } from '../shared/rides';
 import HeroPhone from '../src/components/HeroPhone';
 import { 
   estimateRideCost, 
-  getFareBreakdown, 
-  resolveDestinationType, 
-  resolvePickupZone 
+  getFareBreakdown
 } from '../src/utils/priceEstimator';
 import { 
-  DestinationType, 
-  PickupZoneType, 
-  LuggageType, 
-  FlexibilityType, 
-  RideStatusType, 
-  ChatStatusType,
-  ParticipantStatusType
+  LuggageType,
+  FlexibilityType
 } from '../types';
 
 const LocationItem = React.memo(({ name, address, icon, onClick }: { name: string, address: string, icon: React.ReactNode, onClick: () => void }) => (
@@ -52,13 +46,15 @@ const LocationItem = React.memo(({ name, address, icon, onClick }: { name: strin
 
 const CreateRide: React.FC = () => {
   const navigate = useNavigate();
-  const { getRides, getParticipants, saveRides, saveParticipants } = useMockStore();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const submitting = useRef(false);
 
   const [pickup, setPickup] = useState('');
   const [destination, setDestination] = useState('');
   const [terminal, setTerminal] = useState<string | null>(null);
   const [step, setStep] = useState<'form' | 'similar' | 'confirm'>('form');
-  const [similarRides, setSimilarRides] = useState<any[]>([]);
+  const [similarRides, setSimilarRides] = useState<PersistedRide[]>([]);
   const [focusedField, setFocusedField] = useState<'pickup' | 'destination' | null>(null);
   
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -189,129 +185,76 @@ const CreateRide: React.FC = () => {
     return d;
   };
 
-  const findSimilarRides = () => {
-    const allRides = getRides();
+  const findSimilarRides = async () => {
+    const allRides = await listRides();
     const departureDate = getDepartureDate();
     const isAirport = pickup.includes('Airport') || destination.includes('Airport');
     const oneHour = 60 * 60 * 1000;
 
-    const targetDest = resolveDestinationType(destination);
-    const targetPickup = resolvePickupZone(pickup);
-
-    return allRides.filter((r: any) => {
-      const sameDest = r.destination === targetDest;
-      const sameOrigin = r.pickupZone === targetPickup;
+    return allRides.filter((r) => {
+      const sameDest = r.destination.name.toLowerCase() === destination.trim().toLowerCase();
+      const sameOrigin = r.origin.name.toLowerCase() === pickup.trim().toLowerCase();
       
       if (!sameDest || !sameOrigin) return false;
-      if (isAirport && terminal && r.terminal && r.terminal !== terminal) return false;
+      if (isAirport && terminal && (r.origin.terminal || r.destination.terminal) !== terminal) return false;
 
       const rideTime = new Date(r.departureTime).getTime();
       const diff = Math.abs(rideTime - departureDate.getTime());
       
-      return diff <= oneHour && r.status === RideStatusType.OPEN && r.seatsTaken < r.seatsTotal;
+      return diff <= oneHour && r.seatsTaken < r.seatsTotal;
     });
   };
 
   useEffect(() => {
-    if (step === 'similar' || step === 'confirm') {
-      const found = findSimilarRides();
-      setSimilarRides(found);
-      if (found.length > 0) {
-        setStep('similar');
-      } else if (step === 'similar') {
-        setStep('confirm');
-      }
-    }
+    // Editing trip inputs invalidates the previous search/confirmation.
+    setStep('form');
   }, [selectedDate, selectedTime, pickup, destination, terminal]);
 
-  const handleContinue = () => {
-    if (!pickup || !destination) return;
-    const isLogan = pickup.includes('Airport') || destination.includes('Airport');
-    if (isLogan && !terminal) return;
-
-    const found = findSimilarRides();
-    if (found.length > 0) {
+  const handleContinue = async () => {
+    if (submitting.current || !pickup.trim() || !destination.trim()) return;
+    if ((pickup.includes('Airport') || destination.includes('Airport')) && !terminal) return;
+    submitting.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      const found = await findSimilarRides();
       setSimilarRides(found);
-      setStep('similar');
-    } else {
-      setStep('confirm');
+      setStep(found.length ? 'similar' : 'confirm');
+    } catch {
+      setError('Unable to search rides. Please try again.');
+    } finally {
+      submitting.current = false;
+      setBusy(false);
     }
   };
 
-  const handleJoinRide = (rideId: string) => {
-    const participants = getParticipants();
-    const newPart = {
-      id: `p-${Math.random().toString(36).substr(2, 9)}`,
-      rideId,
-      userId: CURRENT_USER.id,
-      status: ParticipantStatusType.ACCEPTED,
-      joinedAt: new Date().toISOString()
-    };
-    
-    // Update seats taken
-    const allRides = getRides();
-    const updatedRides = allRides.map((r: any) => {
-      if (r.id === rideId) {
-        return { ...r, seatsTaken: r.seatsTaken + 1 };
-      }
-      return r;
-    });
+  const rideLocation = (name: string): RideLocation => ({
+    name: name.trim(),
+    address: locations.find(location => location.name === name)?.address ?? null,
+    terminal: name.includes('Airport') ? terminal as RideLocation['terminal'] : null,
+  });
 
-    saveRides(updatedRides);
-    saveParticipants([...participants, newPart]);
-    navigate(`/ride/${rideId}`);
-  };
-
-  const handleCreateRide = () => {
-    const finalDepartureDate = new Date(selectedDate);
-    if (selectedTime === 'Now') {
-      const now = new Date();
-      finalDepartureDate.setHours(now.getHours(), now.getMinutes(), 0, 0);
-    } else {
-      const [time, ampm] = selectedTime.split(' ');
-      let [h, m] = time.split(':').map(Number);
-      if (ampm === 'PM' && h !== 12) h += 12;
-      if (ampm === 'AM' && h === 12) h = 0;
-      finalDepartureDate.setHours(h, m, 0, 0);
+  const handleCreateRide = async () => {
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setError('');
+    const departureTime = getDepartureDate().toISOString();
+    try {
+      const ride = await createRide({
+        origin: rideLocation(pickup), destination: rideLocation(destination),
+        departureTime, seatsTotal: 4, luggageType: LuggageType.ONE_SUITCASE,
+        flexibility: FlexibilityType.PLUS_MINUS_30,
+        estimatedTotalCostCents: Math.round(estimateRideCost(destination, departureTime, pickup, terminal) * 100),
+        hostNote: null,
+      });
+      navigate(`/ride/${ride.id}`);
+    } catch {
+      setError('Could not confirm the ride was saved. Check Find Rides before retrying.');
+    } finally {
+      submitting.current = false;
+      setBusy(false);
     }
-
-    const destType = resolveDestinationType(destination);
-    const pickupZoneType = resolvePickupZone(pickup);
-    const estimatedCost = estimateRideCost(destType, finalDepartureDate.toISOString(), pickup, terminal);
-
-    const rideId = `r-${Math.random().toString(36).substr(2, 9)}`;
-    const newRide = {
-      id: rideId,
-      hostUserId: CURRENT_USER.id,
-      destination: destType,
-      destinationAddress: destination,
-      terminal: terminal || undefined,
-      pickupZone: pickupZoneType,
-      rideDate: finalDepartureDate.toISOString().split('T')[0],
-      departureTime: finalDepartureDate.toISOString(),
-      seatsTotal: 4,
-      seatsTaken: 1,
-      luggageType: LuggageType.ONE_SUITCASE,
-      flexibility: FlexibilityType.PLUS_MINUS_30,
-      estimatedTotalCost: estimatedCost,
-      status: RideStatusType.OPEN,
-      chatStatus: ChatStatusType.LOCKED,
-      confirmationDeadline: new Date(Date.now() + 86400000).toISOString()
-    };
-    saveRides([...getRides(), newRide]);
-    const newPart = {
-      id: `p-${Math.random().toString(36).substr(2, 9)}`,
-      rideId,
-      userId: CURRENT_USER.id,
-      status: ParticipantStatusType.ACCEPTED,
-      joinedAt: new Date().toISOString()
-    };
-    saveParticipants([...getParticipants(), newPart]);
-    
-    // Trigger storage event
-    window.dispatchEvent(new Event('storage'));
-    
-    navigate(`/ride/${rideId}`);
   };
 
   const formatDateLabel = (date: Date) => {
@@ -330,7 +273,9 @@ const CreateRide: React.FC = () => {
         <div className="w-full max-w-[480px] flex flex-col">
           <h1 className="text-3xl sm:text-4xl lg:text-[44px] font-bold leading-[1.1] mb-6 sm:mb-8 lg:mb-10 tracking-tight text-black text-center">Request a ride</h1>
 
-          <div className="space-y-4 relative w-full">
+          {error && <p role="alert" className="mb-4 text-sm text-red-700">{error}</p>}
+          {busy && <p role="status" className="mb-4 text-sm text-neutral-500">Please wait...</p>}
+          <fieldset disabled={busy} inert={busy} className="space-y-4 relative w-full">
           {/* PICKUP */}
           <div className="relative" ref={pickupRef}>
             <div 
@@ -528,7 +473,7 @@ const CreateRide: React.FC = () => {
               )}
             </div>
           </div>
-        </div>
+        </fieldset>
 
         {step === 'form' && (
           <div className="mt-8 sm:mt-12 max-w-lg w-full">
@@ -552,7 +497,7 @@ const CreateRide: React.FC = () => {
             })()}
             <button 
               onClick={handleContinue}
-              disabled={!pickup || !destination || ((pickup.includes('Airport') || destination.includes('Airport')) && !terminal)}
+              disabled={busy || !pickup || !destination || ((pickup.includes('Airport') || destination.includes('Airport')) && !terminal)}
               className={`w-full py-3.5 sm:py-4 rounded-xl font-bold text-[17px] sm:text-[19px] transition-all active:scale-[0.98] ${
                 pickup && destination && (!(pickup.includes('Airport') || destination.includes('Airport')) || terminal) ? 'bg-black text-white hover:bg-neutral-800 shadow-xl' : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
               }`}
@@ -567,8 +512,8 @@ const CreateRide: React.FC = () => {
             <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Similar rides found</h2>
             <div className="space-y-4 mb-6 sm:mb-8">
               {similarRides.map((ride) => {
-                const currentCost = (ride.estimatedTotalCost / Math.max(1, ride.seatsTaken)).toFixed(2);
-                const nextCost = (ride.estimatedTotalCost / (ride.seatsTaken + 1)).toFixed(2);
+                const currentCost = ((ride.estimatedTotalCostCents / 100) / Math.max(1, ride.seatsTaken)).toFixed(2);
+                const nextCost = ((ride.estimatedTotalCostCents / 100) / (ride.seatsTaken + 1)).toFixed(2);
                 return (
                   <div key={ride.id} className="bg-neutral-50 p-4 sm:p-5 rounded-2xl border border-neutral-100 flex items-center justify-between gap-3">
                     <div className="min-w-0">
@@ -581,26 +526,28 @@ const CreateRide: React.FC = () => {
                         </span>
                       </div>
                       <p className="text-neutral-500 text-[12px] sm:text-[13px] truncate mt-0.5">
-                        {ride.terminal ? `Terminal ${ride.terminal} • ` : ''}{ride.seatsTotal - ride.seatsTaken} seats left (currently ${currentCost})
+                        {(ride.origin.terminal || ride.destination.terminal) ? `Terminal ${ride.origin.terminal || ride.destination.terminal} • ` : ''}{ride.seatsTotal - ride.seatsTaken} seats left (currently ${currentCost})
                       </p>
                     </div>
                     <button 
-                      onClick={() => handleJoinRide(ride.id)}
+                      onClick={() => navigate(`/ride/${ride.id}`)}
                       className="bg-black text-white px-5 sm:px-6 py-2 rounded-full font-bold text-[13px] sm:text-[14px] hover:bg-neutral-800 transition-colors shrink-0"
                     >
-                      Join
+                      View
                     </button>
                   </div>
                 );
               })}
             </div>
             <button 
+              disabled={busy}
               onClick={() => setStep('confirm')}
               className="w-full py-3.5 sm:py-4 rounded-xl font-bold text-[15px] sm:text-[17px] border-2 border-neutral-200 hover:bg-neutral-50 transition-colors"
             >
               Create my own ride
             </button>
             <button 
+              disabled={busy}
               onClick={() => setStep('form')}
               className="w-full mt-4 text-neutral-500 font-bold text-[14px] hover:text-black transition-colors"
             >
@@ -657,12 +604,14 @@ const CreateRide: React.FC = () => {
               </div>
               <button 
                 onClick={handleCreateRide}
+                disabled={busy}
                 className="w-full py-3.5 sm:py-4 rounded-xl bg-black text-white font-bold text-[17px] sm:text-[19px] hover:bg-neutral-800 shadow-xl transition-all active:scale-[0.98]"
               >
                 Post Ride
               </button>
               <button 
-                onClick={() => setStep('form')}
+                disabled={busy}
+              onClick={() => setStep('form')}
                 className="w-full mt-4 text-neutral-500 font-bold text-[14px] hover:text-black transition-colors"
               >
                 Edit details

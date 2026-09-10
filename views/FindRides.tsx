@@ -13,54 +13,32 @@ import {
   ChevronRight,
   Clock
 } from 'lucide-react';
-import { useMockStore, CURRENT_USER } from '../store';
-import { Ride, DestinationType, RideStatusType } from '../types';
+import { listRides } from '../src/api/rides';
+import { locationLabel, type PersistedRide } from '../shared/rides';
 
 const FindRides: React.FC = () => {
-  const { getRides } = useMockStore();
-  const [rides, setRides] = useState<Ride[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
+  const [rides, setRides] = useState<PersistedRide[]>([]);
   const [filterDestination, setFilterDestination] = useState<string>('ALL');
 
   useEffect(() => {
-    const fetchRides = () => {
-      const allRides = getRides();
-      let results = allRides.filter((r: Ride) => r.status === RideStatusType.OPEN);
-      
-      // Sort by departure time ascending (nearest first)
-      results.sort((a, b) => {
-        const timeA = a.departureTime ? new Date(a.departureTime).getTime() : 0;
-        const timeB = b.departureTime ? new Date(b.departureTime).getTime() : 0;
-        
-        if (isNaN(timeA)) return 1;
-        if (isNaN(timeB)) return -1;
-        
-        return timeA - timeB;
-      });
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    listRides(controller.signal).then(all => {
+      setRides(filterDestination === 'ALL' ? all : all.filter(r =>
+        r.destination.name === filterDestination));
+    }).catch(() => {
+      if (!controller.signal.aborted) setError('Unable to load rides. Please try again.');
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoading(false);
+    });
+    return () => controller.abort();
+  }, [filterDestination, reload]);
 
-      if (filterDestination !== 'ALL') {
-        results = results.filter((r: Ride) => r.destination === filterDestination);
-      }
-      
-      setRides(results);
-    };
-
-    fetchRides();
-    window.addEventListener('storage', fetchRides);
-    return () => window.removeEventListener('storage', fetchRides);
-  }, [filterDestination]);
-
-  const formatDestinationName = (ride: Ride) => {
-    const dest = ride.destination;
-    let name = '';
-    if (dest === 'LOGAN') name = 'Logan Airport';
-    else if (dest === 'HUNTINGTON_177') name = '177 Huntington';
-    else name = dest.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
-
-    if (dest === 'LOGAN' && ride.terminal) {
-      return `${name} (${ride.terminal})`;
-    }
-    return name;
-  };
+  const formatDestinationName = (ride: PersistedRide) => locationLabel(ride.destination);
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-8 sm:pt-16 pb-16 sm:pb-24 space-y-8 sm:space-y-12">
@@ -78,18 +56,20 @@ const FindRides: React.FC = () => {
             onChange={(e) => setFilterDestination(e.target.value)}
           >
             <option value="ALL">All Destinations</option>
-            <option value={DestinationType.LOGAN}>Logan Airport</option>
-            <option value={DestinationType.SOUTH_STATION}>South Station</option>
-            <option value={DestinationType.HUNTINGTON_177}>177 Huntington</option>
-            <option value={DestinationType.BOSTON_COLLEGE}>Boston College</option>
-            <option value={DestinationType.NEWTON_CAMPUS}>Newton Campus</option>
+            <option value="Logan Airport (BOS)">Logan Airport</option>
+            <option value="South Station">South Station</option>
+            <option value="177 Huntington Ave">177 Huntington</option>
+            <option value="Boston College">Boston College</option>
+            <option value="Newton Campus">Newton Campus</option>
           </select>
           <ChevronDown size={14} className="text-neutral-400 mr-2 shrink-0" />
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:gap-4">
-        {rides.length > 0 ? (
+        {loading ? <p role="status" className="text-center text-neutral-500">Loading rides...</p> : error ? (
+          <div role="alert" className="text-center"><p>{error}</p><button className="mt-3 underline" onClick={() => setReload(value => value + 1)}>Retry</button></div>
+        ) : rides.length > 0 ? (
           rides.map(ride => {
             return (
               <Link key={ride.id} to={`/ride/${ride.id}`} className="group">
@@ -142,7 +122,7 @@ const FindRides: React.FC = () => {
                   <div className="bg-neutral-200 border-t border-neutral-300 py-1.5 sm:py-2 px-3 sm:px-6 flex items-center justify-center">
                     <div className="flex items-center text-neutral-500 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest truncate">
                       <MapPin size={10} className="mr-1 shrink-0" />
-                      <span className="truncate">FROM: {(ride.pickupZone as string) === 'MAIN' || ride.pickupZone === 'BOSTON COLLEGE' ? 'BOSTON COLLEGE' : ride.pickupZone.replace('_', ' ').toUpperCase()}</span>
+                      <span className="truncate">FROM: {locationLabel(ride.origin)}</span>
                     </div>
                   </div>
 
