@@ -1,0 +1,6 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Existing profile markup uses this legacy color class. */
+.bc-maroon { color: #8a2432; }

@@ -142,7 +142,7 @@ const FindRides: React.FC = () => {
                   <div className="bg-neutral-200 border-t border-neutral-300 py-1.5 sm:py-2 px-3 sm:px-6 flex items-center justify-center">
                     <div className="flex items-center text-neutral-500 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest truncate">
                       <MapPin size={10} className="mr-1 shrink-0" />
-                      <span className="truncate">FROM: {ride.pickupZone === 'MAIN' || ride.pickupZone === 'BOSTON COLLEGE' ? 'BOSTON COLLEGE' : ride.pickupZone.replace('_', ' ').toUpperCase()}</span>
+                      <span className="truncate">FROM: {(ride.pickupZone as string) === 'MAIN' || ride.pickupZone === 'BOSTON COLLEGE' ? 'BOSTON COLLEGE' : ride.pickupZone.replace('_', ' ').toUpperCase()}</span>
                     </div>
                   </div>
 

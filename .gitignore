@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local secrets (keep the documented template)
+.env
+.env.*
+!.env.example
+
+# Test artifacts
+playwright-report/
+test-results/
