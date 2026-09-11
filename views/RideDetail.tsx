@@ -17,104 +17,69 @@ import {
   Map as MapIcon,
   ChevronRight
 } from 'lucide-react';
-import { useMockStore, CURRENT_USER } from '../store';
-import { Ride, RideParticipant, ParticipantStatusType, RideStatusType, PickupZoneType } from '../types';
-import { getLocationGuidance, LocationGuidance } from '../geminiService';
-import { getFareBreakdown, estimateRideCost } from '../src/utils/priceEstimator';
+import { CURRENT_USER } from '../store';
+import { getRide, ApiError } from '../src/api/rides';
+import { locationLabel, type PersistedRide } from '../shared/rides';
+import { getFareBreakdown } from '../src/utils/priceEstimator';
 
 const RideDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { getRides, getParticipants, saveParticipants, saveRides } = useMockStore();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
   
-  const [ride, setRide] = useState<Ride | null>(null);
-  const [participants, setParticipants] = useState<RideParticipant[]>([]);
+  const [ride, setRide] = useState<PersistedRide | null>(null);
+  const [participants, setParticipants] = useState<PersistedRide['participants']>([]);
   const [isJoined, setIsJoined] = useState(false);
   const [selectedSplitCount, setSelectedSplitCount] = useState<number | null>(null);
 
   useEffect(() => {
-    const r = getRides().find((r: Ride) => r.id === id);
-    if (r) {
-      setRide(r);
-      const ps = getParticipants().filter((p: RideParticipant) => p.rideId === id);
-      setParticipants(ps);
-      
-      const userPart = ps.find((p: RideParticipant) => p.userId === CURRENT_USER.id);
-      setIsJoined(!!userPart && userPart.status !== ParticipantStatusType.CANCELLED);
-    }
-  }, [id]);
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    setRide(null);
+    setSelectedSplitCount(null);
+    getRide(id ?? '', controller.signal).then(ride => {
+      setRide(ride);
+      setParticipants(ride.participants);
+      setIsJoined(ride.participants.some(p => p.userId === CURRENT_USER.id));
+    }).catch(error => {
+      if (!controller.signal.aborted) setError(error instanceof ApiError && error.status === 404
+        ? 'Ride not found.' : 'Unable to load this ride. Please try again.');
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoading(false);
+    });
+    return () => controller.abort();
+  }, [id, reload]);
 
-  const handleJoin = () => {
-    if (!ride) return;
-    const newPart: RideParticipant = {
-      id: `p-${Math.random().toString(36).substr(2, 9)}`,
-      rideId: ride.id,
-      userId: CURRENT_USER.id,
-      status: ParticipantStatusType.ACCEPTED,
-      joinedAt: new Date().toISOString()
-    };
-    
-    // Update ride in store
-    const allRides = getRides();
-    const updatedRides = allRides.map((r: Ride) => 
-      r.id === ride.id ? { ...r, seatsTaken: r.seatsTaken + 1, chatStatus: 'ACTIVE' } : r
-    );
-    saveRides(updatedRides);
-
-    const allParts = [...getParticipants(), newPart];
-    saveParticipants(allParts);
-    setIsJoined(true);
-    setParticipants([...participants, newPart]);
-    setRide({ ...ride, seatsTaken: ride.seatsTaken + 1, chatStatus: 'ACTIVE' } as Ride);
-  };
-
-  if (!ride) {
-    return (
-      <div className="max-w-4xl mx-auto py-16 px-4 text-center">
-        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-black mb-4"></div>
-        <p className="text-neutral-500 font-medium">Loading ride details...</p>
-      </div>
-    );
+  if (loading || !ride) {
+    return <div className="max-w-4xl mx-auto py-16 px-4 text-center">
+      <p role={loading ? 'status' : 'alert'} className="text-neutral-500 font-medium">{loading ? 'Loading ride details...' : error}</p>
+      {!loading && <><button className="m-3 underline" onClick={() => setReload(value => value + 1)}>Retry</button><Link className="underline" to="/find">Find Rides</Link></>}
+    </div>;
   }
 
   const actualGroupCount = Math.max(1, participants.length > 0 ? participants.length : (ride.seatsTaken || 1));
   const activeSplitCount = selectedSplitCount ?? actualGroupCount;
   const breakdown = getFareBreakdown(
-    ride.destination,
+    ride.destination.name,
     ride.departureTime,
-    ride.pickupZone,
+    ride.origin.name,
     activeSplitCount,
-    ride.terminal
+    ride.origin.terminal || ride.destination.terminal
   );
-  const totalCost = breakdown.totalEstimatedCost;
+  const totalCost = ride.estimatedTotalCostCents / 100;
 
   const costPerPerson = +(totalCost / activeSplitCount).toFixed(2);
   const nextSplitCount = Math.min(ride.seatsTotal, actualGroupCount + 1);
   const nextCostPerPerson = +(totalCost / nextSplitCount).toFixed(2);
   const savingsPerPerson = +(totalCost - costPerPerson).toFixed(2);
 
-  const isNewton = (ride.pickupZone as string) === 'NEWTON';
-  const isOffCampus = (ride.pickupZone as string) === 'OFF_CAMPUS';
-  const originTitle = isNewton 
-    ? 'Boston College (Newton Campus)' 
-    : isOffCampus 
-    ? 'Off-Campus Location' 
-    : 'Boston College (Main Campus)';
-
-  const originAddress = isNewton
-    ? '885 Centre St, Newton, MA'
-    : isOffCampus
-    ? 'Chestnut Hill, MA'
-    : '140 Commonwealth Ave, Chestnut Hill, MA';
-
-  const formatDestinationName = (dest: string) => {
-    if (dest === 'LOGAN') return 'Logan Airport';
-    if (dest === 'HUNTINGTON_177') return '177 Huntington';
-    return dest.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
-  };
-
+  const originTitle = locationLabel(ride.origin);
+  const originAddress = ride.origin.address ?? '';
   const originQuery = `${originTitle}, ${originAddress}`;
-  const destinationQuery = `${formatDestinationName(ride.destination)}${ride.terminal ? ` Terminal ${ride.terminal}` : ''}, ${ride.destinationAddress}`;
+  const destinationQuery = `${locationLabel(ride.destination)}, ${ride.destination.address ?? ''}`;
   const mapsEmbedUrl = `https://maps.google.com/maps?saddr=${encodeURIComponent(originQuery)}&daddr=${encodeURIComponent(destinationQuery)}&output=embed`;
   const externalMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(originQuery)}&destination=${encodeURIComponent(destinationQuery)}&travelmode=driving`;
 
@@ -127,28 +92,6 @@ const RideDetail: React.FC = () => {
   });
 
   const isHost = ride.hostUserId === CURRENT_USER.id;
-
-  const handleDelete = () => {
-    if (window.confirm('Are you sure you want to delete this ride?')) {
-      // Get fresh data
-      const allRides = getRides();
-      const allParticipants = getParticipants();
-      
-      // Filter out
-      const updatedRides = allRides.filter((r: Ride) => r.id !== ride.id);
-      const updatedParticipants = allParticipants.filter((p: RideParticipant) => p.rideId !== ride.id);
-      
-      // Save
-      saveRides(updatedRides);
-      saveParticipants(updatedParticipants);
-      
-      // Notify other components in the same window
-      window.dispatchEvent(new Event('storage'));
-      
-      // Navigate back
-      navigate('/dashboard');
-    }
-  };
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pt-6 sm:pt-8 pb-12 px-4 sm:px-6 lg:px-8">
@@ -164,19 +107,19 @@ const RideDetail: React.FC = () => {
             <div className="flex justify-between items-start mb-6 sm:mb-8 gap-4">
               <div className="min-w-0">
                 <span className="bg-neutral-100 text-neutral-600 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider mb-2 sm:mb-3 inline-block">
-                  {ride.pickupZone.replace('_', ' ')} Pickup
+                  {locationLabel(ride.origin)} Pickup
                 </span>
                 <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-neutral-900 tracking-tight">
-                  {ride.pickupZone === 'OFF_CAMPUS' && ride.terminal ? 'From' : 'To'} {formatDestinationName(ride.destination)} {ride.terminal && `(${ride.terminal})`}
+                  To {locationLabel(ride.destination)}
                 </h1>
                 <p className="text-neutral-500 font-medium text-xs sm:text-sm mt-1.5 flex items-center">
                   <MapPin size={14} className="mr-1.5 text-neutral-400 shrink-0" />
-                  <span className="truncate">{ride.destinationAddress}</span>
+                  <span className="truncate">{ride.destination.address}</span>
                 </p>
               </div>
               <div className="text-right shrink-0">
                 <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Status</p>
-                <p className={`font-bold text-xs sm:text-sm mt-1 ${ride.status === RideStatusType.CONFIRMED ? 'text-emerald-500' : 'text-neutral-900'}`}>{ride.status}</p>
+                <p className={`font-bold text-xs sm:text-sm mt-1 text-neutral-900`}>OPEN</p>
               </div>
             </div>
 
@@ -264,19 +207,12 @@ const RideDetail: React.FC = () => {
                     </div>
                   </div>
                   <div className="flex items-center space-x-2 text-[10px] font-bold uppercase tracking-wider">
-                    {p.status === ParticipantStatusType.ACCEPTED || p.status === ParticipantStatusType.CONFIRMED ? (
-                      <span className="flex items-center space-x-1 text-emerald-600">
-                        <CheckCircle2 size={12} />
-                        <span>{p.status}</span>
-                      </span>
-                    ) : (
-                      <span className="text-neutral-500">{p.status}</span>
-                    )}
+                    <span className="flex items-center space-x-1 text-emerald-600"><CheckCircle2 size={12} /><span>Joined</span></span>
                   </div>
                 </div>
               ))}
               
-              {[...Array(ride.seatsTotal - participants.length)].map((_, i) => (
+              {[...Array(Math.max(0, ride.seatsTotal - participants.length))].map((_, i) => (
                 <div key={i} className="flex items-center space-x-4 p-4 border border-dashed border-neutral-200 rounded-xl text-neutral-300">
                   <div className="w-10 h-10 border border-dashed border-neutral-200 rounded-full flex items-center justify-center">
                     <Users size={18} />
@@ -360,28 +296,23 @@ const RideDetail: React.FC = () => {
             {/* Action button */}
             {!isJoined ? (
               <button 
-                onClick={handleJoin}
+                disabled title="Joining is not available yet"
                 className="w-full bg-black text-white font-bold py-3.5 rounded-xl hover:bg-neutral-800 transition-all flex items-center justify-center text-sm cursor-pointer active:scale-[0.99]"
               >
-                <span>Join Ride</span>
+                <span>Joining unavailable</span>
                 <ChevronRight className="ml-1" size={16} />
               </button>
             ) : (
-              <Link 
-                to={`/chat/${ride.id}`}
-                className="w-full flex items-center justify-center py-3.5 rounded-xl font-bold transition-all bg-black text-white hover:bg-neutral-800 text-sm"
-              >
-                <MessageCircle size={16} className="mr-2" /> Open Chat
-              </Link>
+              <p className="w-full text-center py-3.5 text-sm text-neutral-500">You are hosting this ride.</p>
             )}
 
             {isHost && (
               <div className="mt-3 text-center">
                 <button 
-                  onClick={handleDelete}
+                  disabled title="Deleting is not available yet"
                   className="text-xs font-bold text-red-500 hover:text-red-700 transition-colors cursor-pointer"
                 >
-                  Delete Ride
+                  Delete unavailable
                 </button>
               </div>
             )}

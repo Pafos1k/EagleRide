@@ -1,4 +1,5 @@
 import express from "express";
+import { rideRoutes, rideErrorHandler } from "./server/rideRoutes";
 import path from "path";
 import { fileURLToPath } from "node:url";
 import "dotenv/config";
@@ -32,6 +33,9 @@ async function startServer() {
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
+
+  app.use("/api/rides", rideRoutes());
+  app.use("/api/rides", rideErrorHandler);
 
   // AI Smart Ride Recommendations
   app.post("/api/recommendations", async (req, res) => {

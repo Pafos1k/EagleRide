@@ -11,33 +11,38 @@
     "lint": "npm run typecheck",
     "test": "node --test tests/server.test.mjs",
     "test:ui": "playwright test",
-    "preview": "npm start"
+    "preview": "npm start",
+    "db:migrate": "node dist/server/migrate.mjs",
+    "test:db": "node --test tests/rides.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.41.0",
+    "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "lucide-react": "^0.574.0",
     "motion": "^12.34.3",
+    "pg": "^8.23.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.13.0",
     "recharts": "^3.7.0",
-    "dotenv": "^17.2.3"
+    "zod": "^4.6.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/express": "^5.0.6",
     "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "esbuild": "^0.28.2",
-    "tsx": "^4.23.13",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "tailwindcss": "^3.4.19",
-    "postcss": "^8.5.6",
+    "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.23",
-    "@playwright/test": "^1.58.2"
+    "esbuild": "^0.28.2",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.19",
+    "tsx": "^4.23.13",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
   },
   "engines": {
     "node": ">=22.12.0 <25",
