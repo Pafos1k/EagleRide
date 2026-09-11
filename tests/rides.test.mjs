@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import pg from 'pg';
+import { mockSupabase, cookieClient, alice, bob } from './helpers/mock-supabase.mjs';
 
 // Always create/drop a uniquely named disposable DB, never reset a supplied DB.
 if (!process.env.TEST_DATABASE_URL) throw new Error('Set TEST_DATABASE_URL to a PostgreSQL connection with CREATEDB permission.');
@@ -17,7 +18,10 @@ let databaseCreated = false;
 let server;
 let origin;
 let saved;
-const environment = { ...process.env, DATABASE_URL: databaseUrl, PORT: '0', GEMINI_API_KEY: '', API_KEY: '', DOTENV_CONFIG_PATH: 'tests/.env.disabled' };
+let provider;
+let actor;
+let actingUser;
+const environment = { ...process.env, APP_ORIGIN: 'http://localhost:3000', DATABASE_URL: databaseUrl, PORT: '0', GEMINI_API_KEY: '', API_KEY: '', DOTENV_CONFIG_PATH: 'tests/.env.disabled' };
 async function migrate() {
   const child = spawn(process.execPath, ['dist/server/migrate.mjs'], { env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
   let errors = '';
@@ -25,7 +29,11 @@ async function migrate() {
   const [code] = await once(child, 'exit');
   assert.equal(code, 0, errors);
 }
-async function start() {
+async function start(configuredOrigin) {
+  const { createServer } = await import('node:net');
+  const probe = createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'listening');
+  const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
+  environment.PORT = String(port); environment.APP_ORIGIN = configuredOrigin ?? `http://127.0.0.1:${port}`;
   server = spawn(process.execPath, ['dist/server/server.mjs'], { env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
   origin = await new Promise((resolve, reject) => {
     let output = '';
@@ -39,6 +47,8 @@ async function start() {
     server.on('exit', code => { clearTimeout(timer); reject(new Error(`Server exited: ${code}`)); });
     server.stderr.resume();
   });
+  actor = cookieClient(origin);
+  environment.APP_ORIGIN = origin;
 }
 async function stop() {
   if (server && server.exitCode === null) {
@@ -53,16 +63,19 @@ const input = {
   departureTime: '2030-03-10T01:30:00-05:00', seatsTotal: 4, luggageType: 'ONE_SUITCASE',
   flexibility: 'PLUS_MINUS_30', estimatedTotalCostCents: 5432, hostNote: null,
 };
-const post = body => fetch(`${origin}/api/rides`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const post = body => actor.request('/api/rides', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const count = async () => Number((await db.query('SELECT count(*) FROM rides')).rows[0].count);
 before(async () => {
   await admin.query(`CREATE DATABASE "${databaseName}"`);
   databaseCreated = true;
   await migrate();
+  provider = await mockSupabase();
+  environment.SUPABASE_URL = provider.url; environment.SUPABASE_PUBLISHABLE_KEY = 'mock-key';
   await start();
 }, { timeout: 30000 });
 after(async () => {
   await stop();
+  await provider?.stop();
   await db.end();
   if (databaseCreated) await admin.query(`DROP DATABASE "${databaseName}" WITH (FORCE)`);
   await admin.end();
@@ -72,21 +85,23 @@ test('migrations work on an empty database and are repeatable', async () => {
   assert.equal(await count(), 0);
   assert.deepEqual((await db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")).rows.map(r => r.table_name), ['ride_participants', 'rides', 'schema_migrations', 'users']);
   await migrate();
-  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '1');
+  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '2');
   assert.equal((await db.query("SELECT full_name FROM users WHERE id='u1'")).rows[0].full_name, 'Baldwin Eagle');
 });
 test('POST creates a persisted ride and host participation with server identity and timestamps', async () => {
+  assert.equal((await actor.login()).status, 302);
+  actingUser = await (await actor.request('/api/auth/me')).json();
   const response = await post(input);
   assert.equal(response.status, 201);
   saved = await response.json();
   assert.equal(response.headers.get('location'), `/api/rides/${saved.id}`);
-  assert.equal(saved.hostUserId, 'u1');
+  assert.equal(saved.hostUserId, actingUser.id);
   assert.equal(saved.seatsTaken, 1);
   assert.equal(saved.estimatedTotalCostCents, 5432);
   assert.ok(Number.isFinite(Date.parse(saved.createdAt)));
   const parts = (await db.query('SELECT * FROM ride_participants WHERE ride_id=$1', [saved.id])).rows;
   assert.equal(parts.length, 1);
-  assert.equal(parts[0].user_id, 'u1');
+  assert.equal(parts[0].user_id, actingUser.id);
   assert.equal(saved.participants[0].id, parts[0].id);
   assert.equal(await count(), 1);
 });
@@ -140,12 +155,13 @@ test('a separate HTTP client can read the same database-backed ride', async () =
 test('data survives application process restart using the same database', async () => {
   await stop();
   await start();
+  await actor.login();
   const response = await fetch(`${origin}/api/rides/${saved.id}`);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), saved);
 });
 test('unique participation, foreign keys, and capacity constraints are enforced by PostgreSQL', async () => {
-  await assert.rejects(db.query('INSERT INTO ride_participants(ride_id,user_id) VALUES($1,$2)', [saved.id, 'u1']), { code: '23505' });
+  await assert.rejects(db.query('INSERT INTO ride_participants(ride_id,user_id) VALUES($1,$2)', [saved.id, actingUser.id]), { code: '23505' });
   await assert.rejects(db.query('INSERT INTO ride_participants(ride_id,user_id) VALUES($1,$2)', [saved.id, 'missing']), { code: '23503' });
   await assert.rejects(db.query('INSERT INTO ride_participants(ride_id,user_id) VALUES($1,$2)', [randomUUID(), 'u1']), { code: '23503' });
   for (const seats of [0, 5]) await assert.rejects(db.query('UPDATE rides SET seats_total=$1 WHERE id=$2', [seats, saved.id]), { code: '23514' });
@@ -175,9 +191,189 @@ test('distinct free-text locations and optional fields round-trip without collap
 
 test('malformed and oversized ride JSON return clean client errors', async () => {
   for (const [body, status] of [['{', 400], [JSON.stringify({ text: 'x'.repeat(1024 * 1024) }), 413]]) {
-    const response = await fetch(`${origin}/api/rides`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+    const response = await actor.request('/api/rides', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
     assert.equal(response.status, status);
     assert.match(response.headers.get('content-type'), /application\/json/);
     assert.equal(typeof (await response.json()).error, 'string');
   }
+});
+
+test('auth: anonymous writes/profile are rejected while GET browsing stays public', async () => {
+  const anonymous = cookieClient(origin);
+  assert.equal((await anonymous.request('/api/rides', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })).status, 401);
+  for (const path of ['/api/auth/me', '/api/auth/profile']) assert.equal((await anonymous.request(path)).status, 401);
+  assert.equal((await anonymous.request('/api/rides')).status, 200);
+});
+test('auth: verified mixed-case BC identity synchronizes once and owns newly created rides', async () => {
+  provider.select(bob);
+  const client = cookieClient(origin);
+  await client.login();
+  const first = await (await client.request('/api/auth/me')).json();
+  assert.equal(first.bcEmail, 'bob@bc.edu');
+  assert.equal(first.fullName, 'Bob Eagle');
+  assert.notEqual(first.id, 'u1');
+  await client.login();
+  assert.deepEqual(await (await client.request('/api/auth/profile')).json(), first);
+  assert.equal((await db.query('SELECT count(*) FROM users WHERE auth_subject=$1', [bob.id])).rows[0].count, '1');
+  const ride = await client.request('/api/rides', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+  assert.equal(ride.status, 201);
+  assert.equal((await ride.json()).hostUserId, first.id);
+  provider.select(alice);
+});
+test('auth: verified exact BC domain only; non-BC, subdomains, malformed and unverified accounts fail', async () => {
+  for (const email of ['a@evilbc.edu', 'a@bc.edu.example.com', 'a@dept.bc.edu', 'a@@bc.edu', '@bc.edu', 'a @bc.edu', 'a@gmail.com']) {
+    provider.select({ ...alice, id: randomUUID(), email });
+    const client = cookieClient(origin);
+    const response = await client.login();
+    assert.equal(response.headers.get('location'), '/#/signin?error=403', email);
+    assert.equal((await client.request('/api/auth/me')).status, 401);
+  }
+  provider.select({ ...alice, id: randomUUID(), email: 'notverified@bc.edu', email_confirmed_at: null });
+  const client = cookieClient(origin);
+  assert.equal((await client.login()).headers.get('location'), '/#/signin?error=403');
+  provider.select(alice);
+  const valid = cookieClient(origin); await valid.login();
+  assert.equal((await valid.request('/api/auth/me')).status, 200);
+});
+test('auth: spoofed ownership/user fields and cross-origin mutations are rejected', async () => {
+  const client = cookieClient(origin); await client.login();
+  for (const spoof of [{ hostUserId: 'u1' }, { userId: bob.id }, { email: 'bob@bc.edu' }]) {
+    const response = await client.request('/api/rides', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...input, ...spoof }) });
+    assert.equal(response.status, 400);
+  }
+  const cookie = [...client.jar].map(([k,v]) => `${k}=${v}`).join('; ');
+  for (const path of ['/api/rides', '/api/auth/logout', '/api/auth/login']) {
+    for (const headers of [{}, { Origin: 'https://evil.example' }]) {
+      assert.equal((await fetch(origin + path, { method: 'POST', headers: { ...headers, Cookie: cookie } })).status, 403);
+    }
+  }
+  assert.equal((await client.request('/api/auth/profile/another-user')).status, 404);
+  assert.equal((await client.request('/api/auth/profile', { method: 'POST', body: '{}' })).status, 404);
+});
+function sessionFrom(client) {
+  const encoded = [...client.jar].filter(([key]) => key.startsWith('er-auth.')).sort().map(([,v]) => v).join('');
+  return JSON.parse(Buffer.from(encoded, 'base64url').toString());
+}
+function replaceSession(client, value) {
+  for (const key of client.jar.keys()) if (key.startsWith('er-auth.')) client.jar.delete(key);
+  client.jar.set('er-auth.0', Buffer.from(JSON.stringify(value)).toString('base64url'));
+}
+test('auth: cookies contain Supabase tokens only, never Google tokens/user claims', async () => {
+  const client = cookieClient(origin);
+  const response = await client.login();
+  const session = sessionFrom(client);
+  assert.deepEqual(Object.keys(session).sort(), ['access_token', 'expires_at', 'refresh_token']);
+  assert.ok(!JSON.stringify([...client.jar]).includes('GOOGLE_'));
+  for (const header of response.headers.getSetCookie()) {
+    assert.match(header, /HttpOnly/); assert.match(header, /SameSite=Lax/i);
+    assert.match(header, /Path=\//); assert.doesNotMatch(header, /Domain=/);
+  }
+  const me = await client.request('/api/auth/me');
+  assert.equal(me.headers.get('cache-control'), 'private, no-store');
+  const user = await me.json();
+  assert.deepEqual(Object.keys(user).sort(), ['bcEmail', 'createdAt', 'fullName', 'id']);
+});
+test('auth: expired sessions refresh and rotate cookies; invalid access/refresh fail closed', async () => {
+  const client = cookieClient(origin); await client.login();
+  const original = sessionFrom(client);
+  replaceSession(client, { ...original, expires_at: 0 });
+  assert.equal((await client.request('/api/auth/me')).status, 200);
+  assert.notEqual(sessionFrom(client).refresh_token, original.refresh_token);
+  replaceSession(client, { ...sessionFrom(client), access_token: 'forged', user: { id: bob.id, email: bob.email } });
+  assert.equal((await client.request('/api/auth/me')).status, 401);
+  assert.equal(client.jar.size, 0);
+  replaceSession(client, { access_token: 'expired', refresh_token: 'invalid', expires_at: 0 });
+  assert.equal((await client.request('/api/auth/me')).status, 401);
+});
+test('auth: logout clears cookies and revokes only the Supabase refresh session', async () => {
+  const otherDevice = cookieClient(origin); await otherDevice.login();
+  const client = cookieClient(origin); await client.login();
+  const before = sessionFrom(client);
+  assert.equal((await client.request('/api/auth/logout', { method: 'POST' })).status, 204);
+  assert.equal(client.jar.size, 0);
+  assert.equal((await client.request('/api/auth/me')).status, 401);
+  const replay = cookieClient(origin);
+  replaceSession(replay, { ...before, expires_at: 0 });
+  assert.equal((await replay.request('/api/auth/me')).status, 401);
+  replaceSession(otherDevice, { ...sessionFrom(otherDevice), expires_at: 0 });
+  assert.equal((await otherDevice.request('/api/auth/me')).status, 200);
+  assert.ok(provider.calls.some(call => call.path === '/auth/v1/logout' && call.search === '?scope=local'));
+  assert.ok(provider.calls.every(call => call.path.startsWith('/auth/v1/')));
+});
+test('auth: callback needs browser-bound PKCE verifier; replayed codes fail', async () => {
+  const client = cookieClient(origin);
+  const start = await client.request('/api/auth/login', { method: 'POST' });
+  const authorize = await fetch((await start.json()).url, { redirect: 'manual' });
+  const callback = authorize.headers.get('location');
+  const other = cookieClient(origin);
+  assert.equal((await other.request(callback)).headers.get('location'), '/#/signin?error=401');
+  assert.equal((await client.request(callback)).headers.get('location'), '/#/profile');
+  assert.equal((await client.request(callback)).headers.get('location'), '/#/signin?error=401');
+});
+
+
+test('auth: transient verification/refresh failures fail closed without discarding recoverable cookies', async () => {
+  const client = cookieClient(origin); await client.login();
+  const original = sessionFrom(client);
+  provider.fail('/auth/v1/user', 503);
+  try {
+    assert.equal((await client.request('/api/auth/me')).status, 503);
+    assert.deepEqual(sessionFrom(client), original);
+  } finally { provider.fail('/auth/v1/user', null); }
+  replaceSession(client, { ...original, expires_at: 0 });
+  provider.fail('/auth/v1/token', 429);
+  try {
+    assert.equal((await client.request('/api/auth/me')).status, 503);
+    assert.equal(sessionFrom(client).refresh_token, original.refresh_token);
+  } finally { provider.fail('/auth/v1/token', null); }
+  assert.equal((await client.request('/api/auth/me')).status, 200);
+});
+test('auth: logout clears cookies even when remote revocation fails and remains idempotent', async () => {
+  const client = cookieClient(origin); await client.login();
+  provider.fail('/auth/v1/logout', 503);
+  try {
+    assert.equal((await client.request('/api/auth/logout', { method: 'POST' })).status, 503);
+    assert.equal(client.jar.size, 0);
+    assert.equal((await client.request('/api/auth/me')).status, 401);
+  } finally { provider.fail('/auth/v1/logout', null); }
+  assert.equal((await client.request('/api/auth/logout', { method: 'POST' })).status, 204);
+  await client.login();
+  replaceSession(client, { ...sessionFrom(client), expires_at: 0 });
+  assert.equal((await client.request('/api/auth/logout', { method: 'POST' })).status, 204);
+  assert.equal(client.jar.size, 0);
+});
+test('auth: email collisions never link legacy identities or leave callback session cookies', async () => {
+  const legacy = (await db.query("SELECT * FROM users WHERE id='u1'")).rows[0];
+  provider.select({ ...alice, id: randomUUID(), email: legacy.bc_email });
+  const client = cookieClient(origin);
+  try {
+    assert.equal((await client.login()).headers.get('location'), '/#/signin?error=409');
+    assert.equal(client.jar.size, 0);
+    assert.equal((await client.request('/api/auth/me')).status, 401);
+    assert.equal((await db.query("SELECT auth_subject FROM users WHERE id='u1'")).rows[0].auth_subject, null);
+  } finally { provider.select(alice); }
+});
+test('auth: malformed cookies and failed callback do not authenticate', async () => {
+  const client = cookieClient(origin, new Map([['er-auth.0', 'not-json']]));
+  assert.equal((await client.request('/api/auth/me')).status, 401);
+  await client.request('/api/auth/login', { method: 'POST' });
+  assert.ok([...client.jar.keys()].some(key => key.startsWith('er-pkce')));
+  assert.equal((await client.request('/api/auth/callback?error=access_denied')).headers.get('location'), '/#/signin?error=400');
+  assert.equal(client.jar.size, 0);
+});
+test('auth: HTTPS deployment sets Secure host-only cookies for PKCE and refreshed sessions', async () => {
+  await stop(); await start('https://eagleride.example');
+  try {
+    const response = await fetch(origin + '/api/auth/login', { method: 'POST', headers: { Origin: 'https://eagleride.example' } });
+    assert.equal(response.status, 200);
+    assert.ok(response.headers.getSetCookie().length > 0);
+    for (const header of response.headers.getSetCookie()) {
+      assert.match(header, /; Secure/); assert.match(header, /HttpOnly/); assert.doesNotMatch(header, /Domain=/);
+    }
+    const client = cookieClient(origin);
+    replaceSession(client, { ...provider.issue(alice), expires_at: 0 });
+    const me = await client.request('/api/auth/me');
+    assert.equal(me.status, 200);
+    assert.ok(me.headers.getSetCookie().some(header => /er-auth/.test(header) && /; Secure/.test(header)));
+  } finally { await stop(); await start(); }
 });

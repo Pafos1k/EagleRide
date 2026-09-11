@@ -17,6 +17,8 @@
   },
   "dependencies": {
     "@google/genai": "^1.41.0",
+    "@supabase/supabase-js": "^2.116.0",
+    "cookie": "^2.0.1",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "lucide-react": "^0.574.0",

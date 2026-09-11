@@ -1,4 +1,5 @@
 import express from "express";
+import { authentication, authErrors } from "./server/auth/routes";
 import { rideRoutes, rideErrorHandler } from "./server/rideRoutes";
 import path from "path";
 import { fileURLToPath } from "node:url";
@@ -34,7 +35,12 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
-  app.use("/api/rides", rideRoutes());
+  const auth = authentication();
+  app.use("/api/auth", auth.router);
+  app.use("/api/auth", authErrors);
+  app.use("/api/auth", rideErrorHandler);
+  app.use("/api/rides", rideRoutes(auth.requireUser));
+  app.use("/api/rides", authErrors);
   app.use("/api/rides", rideErrorHandler);
 
   // AI Smart Ride Recommendations
