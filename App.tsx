@@ -19,9 +19,12 @@ import ChatView from './views/ChatView';
 import Profile from './views/Profile';
 import Dashboard from './views/Dashboard';
 import About from './views/About';
+import SignIn from './views/SignIn';
+import { RequireAuth, useAuth } from './src/auth/AuthProvider';
 
 const App: React.FC = () => {
   const location = useLocation();
+  const { user } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isRequestRide = location.pathname === '/' || location.pathname === '/create';
   const isFindSplit = location.pathname === '/find';
@@ -100,7 +103,7 @@ const App: React.FC = () => {
           </Link>
 
           <Link 
-            to="/profile" 
+            to={user ? "/profile" : "/signin"}
             className={`flex items-center px-2 sm:px-3 py-1.5 rounded-full transition-all whitespace-nowrap ${
               isProfile ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-300 hover:text-white hover:bg-neutral-900'
             }`}
@@ -110,7 +113,7 @@ const App: React.FC = () => {
             }`}>
               <User size={15} />
             </div>
-            <span className="hidden sm:inline ml-2 text-xs lg:text-sm">Profile</span>
+            <span className="hidden sm:inline ml-2 text-xs lg:text-sm">{user ? 'Profile' : 'Sign in'}</span>
           </Link>
 
           {/* Mobile hamburger menu button */}
@@ -190,7 +193,7 @@ const App: React.FC = () => {
 
                 <div className="border-t border-neutral-800 my-1 pt-2 flex flex-col space-y-1.5">
                   <Link
-                    to="/profile"
+                    to={user ? "/profile" : "/signin"}
                     onClick={() => setMobileMenuOpen(false)}
                     className={`flex items-center px-4 py-3 rounded-xl text-[15px] font-semibold transition-all ${
                       isProfile 
@@ -199,7 +202,7 @@ const App: React.FC = () => {
                     }`}
                   >
                     <User size={19} className="mr-3.5 text-neutral-400" />
-                    <span>Profile</span>
+                    <span>{user ? 'Profile' : 'Sign in'}</span>
                   </Link>
 
                   <Link
@@ -224,13 +227,14 @@ const App: React.FC = () => {
       {/* Content Area */}
       <main className="flex-1">
         <Routes>
-          <Route path="/" element={<CreateRide />} />
+          <Route path="/" element={<RequireAuth><CreateRide /></RequireAuth>} />
           <Route path="/find" element={<FindRides />} />
-          <Route path="/create" element={<CreateRide />} />
+          <Route path="/create" element={<RequireAuth><CreateRide /></RequireAuth>} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/ride/:id" element={<RideDetail />} />
           <Route path="/chat/:id" element={<ChatView />} />
-          <Route path="/profile" element={<Profile />} />
+          <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
+          <Route path="/signin" element={<SignIn />} />
           <Route path="/about" element={<About />} />
         </Routes>
       </main>

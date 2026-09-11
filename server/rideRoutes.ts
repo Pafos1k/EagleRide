@@ -1,10 +1,11 @@
-import { Router, type ErrorRequestHandler } from 'express';
+import { sameOrigin, privateResponse } from './auth/routes';
+import { Router, type ErrorRequestHandler, type RequestHandler } from 'express';
 import { z } from 'zod';
 import { createRideSchema } from '../shared/rideInput';
 import { createPool } from './db';
 import { createRide, getRide, listRides } from './rides';
 
-export function rideRoutes() {
+export function rideRoutes(requireUser: RequestHandler) {
   const router = Router();
   // Keep Stage 1 health and Gemini fallbacks usable without database configuration.
   const pool = process.env.DATABASE_URL ? createPool() : null;
@@ -19,10 +20,10 @@ export function rideRoutes() {
     if (!ride) return res.status(404).json({ error: 'Ride not found.' });
     res.json(ride);
   });
-  router.post('/', async (req, res) => {
+  router.post('/', privateResponse, sameOrigin, requireUser, async (req, res) => {
     const input = createRideSchema.safeParse(req.body);
     if (!input.success) return res.status(400).json({ error: 'Invalid ride input.', issues: input.error.issues.map(i => ({ path: i.path.join('.'), message: i.message })) });
-    const ride = await createRide(pool!, input.data);
+    const ride = await createRide(pool!, input.data, res.locals.user.id);
     res.status(201).location(`/api/rides/${ride.id}`).json(ride);
   });
 

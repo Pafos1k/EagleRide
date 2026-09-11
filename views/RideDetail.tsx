@@ -17,7 +17,7 @@ import {
   Map as MapIcon,
   ChevronRight
 } from 'lucide-react';
-import { CURRENT_USER } from '../store';
+import { useAuth } from '../src/auth/AuthProvider';
 import { getRide, ApiError } from '../src/api/rides';
 import { locationLabel, type PersistedRide } from '../shared/rides';
 import { getFareBreakdown } from '../src/utils/priceEstimator';
@@ -25,6 +25,7 @@ import { getFareBreakdown } from '../src/utils/priceEstimator';
 const RideDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
@@ -43,7 +44,7 @@ const RideDetail: React.FC = () => {
     getRide(id ?? '', controller.signal).then(ride => {
       setRide(ride);
       setParticipants(ride.participants);
-      setIsJoined(ride.participants.some(p => p.userId === CURRENT_USER.id));
+      setIsJoined(ride.participants.some(p => p.userId === user?.id));
     }).catch(error => {
       if (!controller.signal.aborted) setError(error instanceof ApiError && error.status === 404
         ? 'Ride not found.' : 'Unable to load this ride. Please try again.');
@@ -51,7 +52,7 @@ const RideDetail: React.FC = () => {
       if (!controller.signal.aborted) setLoading(false);
     });
     return () => controller.abort();
-  }, [id, reload]);
+  }, [id, reload, user?.id]);
 
   if (loading || !ride) {
     return <div className="max-w-4xl mx-auto py-16 px-4 text-center">
@@ -91,7 +92,7 @@ const RideDetail: React.FC = () => {
     hour: '2-digit', minute: '2-digit'
   });
 
-  const isHost = ride.hostUserId === CURRENT_USER.id;
+  const isHost = ride.hostUserId === user?.id;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pt-6 sm:pt-8 pb-12 px-4 sm:px-6 lg:px-8">
@@ -200,7 +201,7 @@ const RideDetail: React.FC = () => {
                     </div>
                     <div>
                       <p className="font-bold text-neutral-800 text-sm">
-                        {p.userId === CURRENT_USER.id ? 'You' : `Eagle Participant`}
+                        {p.userId === user?.id ? 'You' : `Eagle Participant`}
                         {p.userId === ride.hostUserId && <span className="ml-2 text-[10px] bg-black text-white px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Host</span>}
                       </p>
                       <p className="text-[10px] text-neutral-400 font-medium uppercase tracking-wider">Joined {new Date(p.joinedAt).toLocaleDateString()}</p>

@@ -2,7 +2,7 @@
 
 React/Vite frontend with an Express server for the existing Gemini endpoints.
 Create/list/detail ride flows use PostgreSQL. Other screens retain their existing
-mock/local behavior. Authentication is not implemented.
+mock/local behavior. Stage 3 adds Supabase Google authentication and persistent user identity.
 
 ## Requirements and development
 
@@ -67,9 +67,9 @@ then reinstalls production-only dependencies and reruns the server tests.
 Core create/list/detail flows now use PostgreSQL through Express. Install PostgreSQL
 18 locally (or use a PostgreSQL 18 service), create an `eagleride` database and a
 login role, and set `DATABASE_URL` in `.env`. The example password is a placeholder.
-Keep the service private: every request currently acts as Baldwin (`u1`), with no
-sign-in or access controls. A second browser is a separate client, not a separate
-user identity in this stage.
+Keep PostgreSQL private. Stage 3 now requires a verified BC Supabase session for
+ride creation; public ride browsing remains available. The legacy `u1` seed remains
+for historical records only.
 
 ```sh
 npm ci
@@ -164,7 +164,7 @@ Browser tests create records in their configured database; use a disposable data
 
 ### Explicit stage boundaries and debt
 
-No authentication, chat storage, join/leave API, notifications, reputation,
+No chat storage, join/leave API, notifications, reputation,
 background jobs, lifecycle automation or Gemini changes are included. Create,
 Find Rides and Ride Detail no longer read/write `er_rides` or `er_participants`.
 The legacy store, dashboard/activity, chat screen and decorative HeroPhone remain
@@ -178,7 +178,112 @@ writes; they do not implement joining, deleting or chat.
 
 Creation has **no idempotency key or duplicate-retry protection**. The UI prevents
 concurrent clicks, but an uncertain network outcome requires checking Find Rides
-before retrying. Listings are currently unpaginated; identity is fixed; estimates
-are client-provided; the temporary user ID is duplicated in the seed/server and
-must be replaced in a later authentication stage. Database changes have no realtime
+before retrying. Listings are currently unpaginated and estimates
+are client-provided. New ride ownership uses the authenticated application user. Database changes have no realtime
 updates; reload/navigate to retrieve the latest data.
+
+
+## Stage 3: authentication and persistent identity
+
+Express owns the Google OAuth PKCE flow through Supabase Auth. The browser calls
+same-origin Express endpoints and never receives session tokens in JSON, JavaScript
+state, or localStorage. `@supabase/supabase-js` runs on the server with a publishable
+key; no service-role key, `express-session`, session table, or `SESSION_SECRET` is used.
+The test-only HTTP provider lives under `tests/helpers`; production has no mock login
+route, test identity switch, or authentication bypass.
+
+### Session handling
+
+- `POST /api/auth/login` starts Google sign-in and returns an authorization URL.
+  The PKCE verifier lives in host-only `er-pkce.*` HttpOnly cookies for ten minutes.
+- `GET /api/auth/callback` exchanges the one-use code with the browser's verifier,
+  calls Supabase `getUser(accessToken)`, enforces a verified BC email, synchronizes
+  the application user, then redirects to `/#/profile`. Failures return a fixed error
+  code in `/#/signin`; no token or provider error detail appears in the redirect.
+- Only Supabase `access_token`, `refresh_token`, and `expires_at` are stored in chunked
+  `er-auth.*` HttpOnly cookies. They are host-only, Path=/, SameSite=Lax and Secure
+  on HTTPS; HTTP is allowed only on loopback for local development. Cookie lifetime
+  is capped at 30 days per write; Supabase session policy remains authoritative.
+  Google provider access/refresh tokens are discarded and never persisted.
+- Each protected request uses a request-scoped client, explicitly refreshes when
+  expiry is within 30 seconds, writes rotated cookies, and calls `getUser` to validate
+  identity remotely. The cookie's user claims are never trusted. Invalid credentials
+  fail closed; transient provider failures return 503 without discarding recoverable
+  cookies. There is no browser SDK or background refresh timer.
+- `GET /api/auth/me` and `GET /api/auth/profile` return only application ID, name,
+  BC email and creation timestamp. These are current-user endpoints; arbitrary user
+  profile retrieval/modification is not implemented.
+- `POST /api/auth/logout` requests Supabase sign-out with `scope=local` and clears
+  both cookie families even if remote revocation fails. A failure is surfaced to
+  the UI with a retry action. It never calls Google token revocation.
+- `POST /api/rides` now requires the server-validated user and derives the host and
+  initial participant from that application ID. Ownership/identity input fields
+  remain rejected. GET ride listing/detail remain public.
+
+All POST auth/ride mutations require an Origin header exactly matching APP_ORIGIN;
+missing or cross-origin values are rejected. Auth responses use private, no-store.
+Keep frontend and API on the same origin; do not enable permissive credentialed CORS.
+The server splits email at exactly one `@`, rejects empty local parts/whitespace,
+and compares the entire domain case-insensitively to `bc.edu`. This verifies mailbox
+ownership only, not current student enrollment. The Google `hd` hint is not trusted.
+
+### Migration
+
+`002_auth.sql` adds nullable unique UUID `users.auth_subject` and
+`users.email_verified_at`. Auth-linked rows must have a verified timestamp and exact
+BC email domain. Existing `001` history, seeded `u1`, rides and foreign keys are
+preserved. Login upserts by verified Supabase subject, never by email alone. An
+email collision with another identity (including a legacy row) returns 409; it does
+not silently transfer historical ownership. No token or session storage is added.
+
+### Manual Supabase / Google setup
+
+1. Create/select a Supabase project. Copy its HTTPS project URL and publishable key
+   into server-only `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` in `.env`.
+2. In Google Cloud, configure the OAuth consent screen and a Web application OAuth
+   client. While the app is in Testing, add the BC test accounts as test users.
+3. Enable Google under Supabase Authentication → Providers. Put the Google client
+   ID and secret in that dashboard, not frontend code. Use the exact Supabase
+   callback URL shown there as Google's authorized redirect URI (normally
+   `https://<project-ref>.supabase.co/auth/v1/callback`). Add your app origin to
+   Google's authorized JavaScript origins where required.
+4. Set Supabase Auth Site URL to `http://localhost:3000` locally and allow redirect
+   `http://localhost:3000/api/auth/callback`. Set `APP_ORIGIN=http://localhost:3000`.
+   Use this hostname consistently; `127.0.0.1` is a different origin. In production,
+   use the actual HTTPS origin and its exact callback URL in both settings.
+5. Set DATABASE_URL, build, and run `npm run db:migrate` before starting the app.
+   Never put Supabase or database configuration in `VITE_*` variables.
+6. Manually verify a BC login, rejected non-BC login, reload, ride host identity,
+   expiry/refresh, and logout against the real project. Automated tests do not prove
+   live Google/Supabase configuration works. No live credentials are included.
+
+Run the same verification commands above. `npm run test:db` includes real-PostgreSQL
+auth integration tests using an isolated HTTP Supabase fixture. Playwright's server
+wrapper uses the same fixture and a disposable, migrated DATABASE_URL database;
+CI does not depend on live OAuth credentials. A sandbox that prevents Chromium from
+launching cannot execute browser assertions; report this separately from test failures.
+
+### Security limitations and remaining debt
+
+- Supabase access JWTs can remain valid until expiry after logout; there is no
+  application JWT denylist or immediate access-token invalidation. Local logout
+  revokes only that Supabase session, not every device or the Google account.
+- If Supabase revocation fails, browser cookies are still cleared but a copied
+  refresh token may remain usable. If the browser cannot reach Express, cookie
+  clearing cannot be confirmed; the UI reports failure and offers retry.
+- Concurrent requests/tabs can race refresh-cookie writes. This design relies on
+  Supabase's refresh-token reuse handling; persistent conflicts require signing in
+  again. No cross-process session lock or custom session service is added.
+- HttpOnly protects token reads from JavaScript, not authenticated requests made
+  by an XSS payload. Deploy with HTTPS, protect the host, and retain secure provider
+  configuration. No app-level auth rate limiter is added in this stage.
+- Display names come from provider metadata and are presentation only. Identity
+  is the verified Supabase subject and email. BC restriction is enforced by Express;
+  rejected non-BC users may still exist in Supabase Auth itself.
+- Public ride responses continue exposing host/participant IDs as in
+  Stage 2. Profile email is only returned to the authenticated user.
+- Activity/dashboard, chat and decorative mock UI remain unchanged and can still
+  show Baldwin/demo data. They do not represent the authenticated user's history.
+  Profile now shows real identity without invented reputation/statistics.
+- No join/leave, Activity migration, chat backend, notifications, reputation,
+  Gemini behavior, enrollment verification or later-stage features are implemented.
