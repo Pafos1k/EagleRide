@@ -14,6 +14,11 @@ const url = new URL(process.env.TEST_DATABASE_URL);
 url.pathname = `/${databaseName}`;
 const databaseUrl = url.toString();
 const db = new pg.Pool({ connectionString: databaseUrl, connectionTimeoutMillis: 5000 });
+// Pool.end() can resolve before its clients finish closing their sockets.
+const databaseConnectionsClosed = [];
+db.on('connect', client => {
+  databaseConnectionsClosed.push(new Promise(resolve => client.once('end', resolve)));
+});
 let databaseCreated = false;
 let server;
 let origin;
@@ -77,6 +82,7 @@ after(async () => {
   await stop();
   await provider?.stop();
   await db.end();
+  await Promise.all(databaseConnectionsClosed);
   if (databaseCreated) await admin.query(`DROP DATABASE "${databaseName}" WITH (FORCE)`);
   await admin.end();
 });
@@ -422,10 +428,15 @@ test('operations: two concurrent contenders for the last seat produce exactly on
   const host = await newActor(), a = await newActor(), b = await newActor();
   const ride = await newRide(host, { seatsTotal: 2 });
   const locker = await db.connect();
-  let requests;
+  let settledRequests = Promise.resolve([]);
   try {
     await locker.query('BEGIN'); await locker.query('SELECT id FROM rides WHERE id=$1 FOR UPDATE', [ride.id]);
-    requests = [operate(a, ride.id, 'join'), operate(b, ride.id, 'join')];
+    // Observe rejections immediately and drain response bodies before cleanup.
+    settledRequests = Promise.allSettled([a, b].map(async contender => {
+      const response = await operate(contender, ride.id, 'join');
+      await response.arrayBuffer();
+      return response.status;
+    }));
     // Prove both operations are contending on the database lock before release.
     const deadline = Date.now() + 5000;
     let waiting = 0;
@@ -436,9 +447,16 @@ test('operations: two concurrent contenders for the last seat produce exactly on
     }
     assert.equal(waiting, 2, 'both joins must reach the ride-row lock');
     await locker.query('COMMIT');
-  } finally { await locker.query('ROLLBACK'); locker.release(); }
-  const responses = await Promise.all(requests);
-  assert.deepEqual(responses.map(r => r.status).sort(), [200, 409]);
+  } finally {
+    // Unblock contenders before awaiting them, including when an assertion fails.
+    try { await locker.query('ROLLBACK'); }
+    finally { locker.release(); await settledRequests; }
+  }
+  const outcomes = await settledRequests;
+  for (const outcome of outcomes) {
+    if (outcome.status === 'rejected') throw outcome.reason;
+  }
+  assert.deepEqual(outcomes.map(outcome => outcome.value).sort(), [200, 409]);
   const persisted = await (await fetch(origin + '/api/rides/' + ride.id)).json();
   assert.equal(persisted.seatsTaken, 2);
   assert.equal((await db.query('SELECT count(*) FROM ride_participants WHERE ride_id=$1 AND left_at IS NULL', [ride.id])).rows[0].count, '2');
