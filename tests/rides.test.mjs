@@ -85,7 +85,7 @@ test('migrations work on an empty database and are repeatable', async () => {
   assert.equal(await count(), 0);
   assert.deepEqual((await db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")).rows.map(r => r.table_name), ['ride_participants', 'rides', 'schema_migrations', 'users']);
   await migrate();
-  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '2');
+  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '3');
   assert.equal((await db.query("SELECT full_name FROM users WHERE id='u1'")).rows[0].full_name, 'Baldwin Eagle');
 });
 test('POST creates a persisted ride and host participation with server identity and timestamps', async () => {
@@ -376,4 +376,120 @@ test('auth: HTTPS deployment sets Secure host-only cookies for PKCE and refreshe
     assert.equal(me.status, 200);
     assert.ok(me.headers.getSetCookie().some(header => /er-auth/.test(header) && /; Secure/.test(header)));
   } finally { await stop(); await start(); }
+});
+
+
+async function newActor() {
+  const identity = { ...alice, id: randomUUID(), email: randomUUID() + '@bc.edu' };
+  provider.select(identity);
+  const client = cookieClient(origin);
+  try { await client.login(); } finally { provider.select(alice); }
+  return { client, user: await (await client.request('/api/auth/me')).json() };
+}
+async function newRide(host, overrides = {}) {
+  const response = await host.client.request('/api/rides', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...input, departureTime: new Date(Date.now() + 86400000).toISOString(), ...overrides }) });
+  assert.equal(response.status, 201);
+  return response.json();
+}
+const operate = (actor, id, action) => actor.client.request('/api/rides/' + id + '/' + action, { method: 'POST' });
+test('operations: public reads stay public; mutations and Activity require authentication', async () => {
+  const host = await newActor(), ride = await newRide(host), anonymous = { client: cookieClient(origin) };
+  for (const path of ['/api/rides', '/api/rides/' + ride.id]) assert.equal((await anonymous.client.request(path)).status, 200);
+  assert.equal((await anonymous.client.request('/api/rides/mine')).status, 401);
+  for (const operation of ['join', 'leave', 'cancel']) assert.equal((await operate(anonymous, ride.id, operation)).status, 401);
+});
+test('operations: join, duplicate/host protection, full capacity, leave retry and rejoin', async () => {
+  const host = await newActor(), guest = await newActor(), other = await newActor();
+  const ride = await newRide(host, { seatsTotal: 2 });
+  assert.equal((await operate(host, ride.id, 'join')).status, 409);
+  assert.equal((await operate(guest, ride.id, 'join')).status, 200);
+  assert.equal((await operate(guest, ride.id, 'join')).status, 409);
+  assert.equal((await operate(other, ride.id, 'join')).status, 409);
+  assert.equal((await operate(other, ride.id, 'leave')).status, 409);
+  assert.equal((await operate(host, ride.id, 'leave')).status, 409);
+  const leave = await operate(guest, ride.id, 'leave');
+  assert.equal(leave.status, 200);
+  const leftRide = await leave.json();
+  assert.equal(leftRide.seatsTaken, 1);
+  assert.ok(leftRide.participants.find(p => p.userId === guest.user.id).leftAt);
+  assert.equal((await operate(guest, ride.id, 'leave')).status, 200);
+  assert.equal((await operate(guest, ride.id, 'join')).status, 200);
+  const rows = (await db.query('SELECT * FROM ride_participants WHERE ride_id=$1 AND user_id=$2', [ride.id, guest.user.id])).rows;
+  assert.equal(rows.length, 1); assert.equal(rows[0].left_at, null);
+});
+test('operations: two concurrent contenders for the last seat produce exactly one join', async () => {
+  const host = await newActor(), a = await newActor(), b = await newActor();
+  const ride = await newRide(host, { seatsTotal: 2 });
+  const locker = await db.connect();
+  let requests;
+  try {
+    await locker.query('BEGIN'); await locker.query('SELECT id FROM rides WHERE id=$1 FOR UPDATE', [ride.id]);
+    requests = [operate(a, ride.id, 'join'), operate(b, ride.id, 'join')];
+    // Prove both operations are contending on the database lock before release.
+    const deadline = Date.now() + 5000;
+    let waiting = 0;
+    while (Date.now() < deadline) {
+      waiting = Number((await db.query("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT * FROM rides WHERE id=%'")).rows[0].count);
+      if (waiting === 2) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.equal(waiting, 2, 'both joins must reach the ride-row lock');
+    await locker.query('COMMIT');
+  } finally { await locker.query('ROLLBACK'); locker.release(); }
+  const responses = await Promise.all(requests);
+  assert.deepEqual(responses.map(r => r.status).sort(), [200, 409]);
+  const persisted = await (await fetch(origin + '/api/rides/' + ride.id)).json();
+  assert.equal(persisted.seatsTaken, 2);
+  assert.equal((await db.query('SELECT count(*) FROM ride_participants WHERE ride_id=$1 AND left_at IS NULL', [ride.id])).rows[0].count, '2');
+});
+test('operations: cancellation is host-only, repeatable, and preserves participants/history', async () => {
+  const host = await newActor(), guest = await newActor(), other = await newActor();
+  const ride = await newRide(host);
+  await operate(guest, ride.id, 'join');
+  assert.equal((await operate(guest, ride.id, 'cancel')).status, 403);
+  const response = await operate(host, ride.id, 'cancel'); assert.equal(response.status, 200);
+  const cancelled = await response.json();
+  assert.ok(cancelled.cancelledAt); assert.equal(cancelled.participants.length, 2);
+  assert.deepEqual(await (await operate(host, ride.id, 'cancel')).json(), cancelled);
+  assert.equal((await operate(other, ride.id, 'join')).status, 409);
+  assert.equal((await operate(guest, ride.id, 'leave')).status, 409);
+  assert.equal((await fetch(origin + '/api/rides/' + ride.id)).status, 200);
+});
+test('operations: missing/departed rides and supplied identity fields are rejected', async () => {
+  const host = await newActor(), guest = await newActor();
+  const past = await newRide(host, { departureTime: new Date(Date.now() - 10000).toISOString() });
+  assert.equal((await operate(guest, past.id, 'join')).status, 409);
+  for (const action of ['join', 'leave', 'cancel']) {
+    assert.equal((await operate(guest, randomUUID(), action)).status, 404);
+    assert.equal((await operate(guest, 'invalid', action)).status, 404);
+    assert.equal((await guest.client.request('/api/rides/' + past.id + '/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: host.user.id }) })).status, 400);
+  }
+});
+test('operations: Activity uses current-user PostgreSQL membership and accurate categories', async () => {
+  const host = await newActor(), guest = await newActor(), stranger = await newActor();
+  const upcoming = await newRide(host), past = await newRide(host, { departureTime: new Date(Date.now() - 1000).toISOString() });
+  const cancelled = await newRide(host, { departureTime: new Date(Date.now() - 1000).toISOString() });
+  await operate(host, cancelled.id, 'cancel');
+  await operate(guest, upcoming.id, 'join');
+  const response = await guest.client.request('/api/rides/mine');
+  assert.equal(response.headers.get('cache-control'), 'private, no-store');
+  const joined = await response.json(); assert.equal(joined.length, 1);
+  assert.equal(joined[0].id, upcoming.id); assert.equal(joined[0].role, 'participant'); assert.equal(joined[0].category, 'upcoming');
+  const hosted = await (await host.client.request('/api/rides/mine')).json();
+  assert.equal(hosted.length, 3); assert.ok(hosted.every(r => r.role === 'host'));
+  assert.equal(hosted.find(r => r.id === past.id).category, 'past');
+  assert.equal(hosted.find(r => r.id === cancelled.id).category, 'cancelled');
+  assert.deepEqual(await (await stranger.client.request('/api/rides/mine')).json(), []);
+  await operate(guest, upcoming.id, 'leave');
+  assert.equal((await (await guest.client.request('/api/rides/mine')).json())[0].membership, 'left');
+  await operate(guest, upcoming.id, 'join'); await operate(host, upcoming.id, 'cancel');
+  assert.equal((await (await guest.client.request('/api/rides/mine')).json())[0].category, 'cancelled');
+});
+test('operations: cross-origin mutations cannot join, leave or cancel', async () => {
+  const host = await newActor(), ride = await newRide(host);
+  const cookie = [...host.client.jar].map(([k,v]) => k + '=' + v).join('; ');
+  for (const operation of ['join', 'leave', 'cancel']) {
+    assert.equal((await fetch(origin + '/api/rides/' + ride.id + '/' + operation, { method: 'POST', headers: { Cookie: cookie, Origin: 'https://evil.example' } })).status, 403);
+  }
 });

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Link, useLocation } from 'react-router-dom';
+import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { 
   HelpCircle, 
@@ -15,7 +15,8 @@ import Logo from './src/components/Logo';
 import FindRides from './views/FindRides';
 import CreateRide from './views/CreateRide';
 import RideDetail from './views/RideDetail';
-import ChatView from './views/ChatView';
+import Home from './views/Home';
+import { safeReturnTo } from './shared/authReturn';
 import Profile from './views/Profile';
 import Dashboard from './views/Dashboard';
 import About from './views/About';
@@ -25,8 +26,16 @@ import { RequireAuth, useAuth } from './src/auth/AuthProvider';
 const App: React.FC = () => {
   const location = useLocation();
   const { user } = useAuth();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!user || location.pathname !== '/profile') return;
+    try {
+      const destination = sessionStorage.getItem('er_auth_return');
+      if (destination) { sessionStorage.removeItem('er_auth_return'); navigate(safeReturnTo(destination), { replace: true }); }
+    } catch { /* Optional navigation state only; no tokens are stored here. */ }
+  }, [user, location.pathname, navigate]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const isRequestRide = location.pathname === '/' || location.pathname === '/create';
+  const isRequestRide = location.pathname === '/create';
   const isFindSplit = location.pathname === '/find';
   const isDashboard = location.pathname === '/dashboard';
   const isProfile = location.pathname === '/profile';
@@ -64,7 +73,7 @@ const App: React.FC = () => {
           {/* Desktop Navigation Links (hidden on mobile, visible on tablet & desktop) */}
           <nav className="hidden md:flex items-center space-x-1 lg:space-x-2 text-xs lg:text-sm font-semibold ml-1 lg:ml-2">
             <Link 
-              to="/" 
+              to="/create"
               className={`px-3 lg:px-4 py-2 rounded-full transition-all whitespace-nowrap ${
                 isRequestRide ? 'bg-white text-black font-bold shadow-sm' : 'text-neutral-300 hover:text-white hover:bg-neutral-900'
               }`}
@@ -153,7 +162,7 @@ const App: React.FC = () => {
             >
               <div className="flex flex-col space-y-1.5 max-w-lg mx-auto">
                 <Link
-                  to="/"
+                  to="/create"
                   onClick={() => setMobileMenuOpen(false)}
                   className={`flex items-center px-4 py-3 rounded-xl text-[15px] font-semibold transition-all ${
                     isRequestRide 
@@ -227,12 +236,12 @@ const App: React.FC = () => {
       {/* Content Area */}
       <main className="flex-1">
         <Routes>
-          <Route path="/" element={<RequireAuth><CreateRide /></RequireAuth>} />
+          <Route path="/" element={<Home />} />
           <Route path="/find" element={<FindRides />} />
           <Route path="/create" element={<RequireAuth><CreateRide /></RequireAuth>} />
-          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
           <Route path="/ride/:id" element={<RideDetail />} />
-          <Route path="/chat/:id" element={<ChatView />} />
+          <Route path="/chat/:id" element={<RequireAuth><p className="p-8 text-center">Chat is not available yet. No messages are sent or stored.</p></RequireAuth>} />
           <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
           <Route path="/signin" element={<SignIn />} />
           <Route path="/about" element={<About />} />

@@ -582,15 +582,10 @@ const CreateRide: React.FC = () => {
                 </div>
                 <div className="flex justify-between items-center text-xs text-neutral-500 pt-3 border-t border-neutral-200">
                   <span className="font-medium">Trip</span>
-                  <span className="font-medium text-neutral-700">{breakdown.distanceMiles} mi · {breakdown.durationLabel}</span>
+                  <a className="underline" target="_blank" rel="noopener noreferrer" href={'https://www.google.com/maps/dir/?api=1&origin=' + encodeURIComponent(pickup) + '&destination=' + encodeURIComponent(destination)}>Check live route in Google Maps</a>
                 </div>
 
-                {breakdown.multiplier > 1.0 && (
-                  <div className="flex justify-between items-center text-xs text-amber-900 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
-                    <span>Surge</span>
-                    <span className="font-bold">{breakdown.multiplier}x</span>
-                  </div>
-                )}
+
 
                 <div className="pt-3 border-t border-neutral-200 flex justify-between items-center">
                   <div>

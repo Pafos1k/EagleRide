@@ -1,8 +1,7 @@
 # EagleRide
 
 React/Vite frontend with an Express server for the existing Gemini endpoints.
-Create/list/detail ride flows use PostgreSQL. Other screens retain their existing
-mock/local behavior. Stage 3 adds Supabase Google authentication and persistent user identity.
+Create/list/detail ride flows use PostgreSQL. Activity and ride operations also use PostgreSQL as of Stage 4. Stage 3 adds Supabase Google authentication and persistent user identity.
 
 ## Requirements and development
 
@@ -62,7 +61,7 @@ the production Express server, including the API endpoints.
 CI repeats installation, typechecking, build, server and Chromium smoke tests,
 then reinstalls production-only dependencies and reruns the server tests.
 
-## Stage 2: PostgreSQL ride storage
+## Stage 2: PostgreSQL ride storage (historical scope; Stage 4 updates below)
 
 Core create/list/detail flows now use PostgreSQL through Express. Install PostgreSQL
 18 locally (or use a PostgreSQL 18 service), create an `eagleride` database and a
@@ -183,7 +182,7 @@ are client-provided. New ride ownership uses the authenticated application user.
 updates; reload/navigate to retrieve the latest data.
 
 
-## Stage 3: authentication and persistent identity
+## Stage 3: authentication and persistent identity (Stage 4 updates below)
 
 Express owns the Google OAuth PKCE flow through Supabase Auth. The browser calls
 same-origin Express endpoints and never receives session tokens in JSON, JavaScript
@@ -287,3 +286,91 @@ launching cannot execute browser assertions; report this separately from test fa
   Profile now shows real identity without invented reputation/statistics.
 - No join/leave, Activity migration, chat backend, notifications, reputation,
   Gemini behavior, enrollment verification or later-stage features are implemented.
+
+
+## Stage 4: public browsing, Activity and ride operations
+
+Home (/#/), Find Rides, Ride Details, and About are public. Creation, Activity,
+Profile, ride mutations and chat entry require sign-in. A protected action redirects
+to sign-in with a validated in-app return path; optional sessionStorage holds only
+that navigation path across OAuth. Joining still requires a deliberate Join click
+after return (it never auto-joins during a callback). Chat routes now explicitly
+say unavailable instead of showing a local conversation. Editing remains unavailable.
+
+### Migration and membership
+
+Run the normal build and npm run db:migrate before starting Stage 4. New migration
+003_ride_operations.sql adds nullable rides.cancelled_at and
+ride_participants.left_at, plus an index for active user memberships. Existing
+rows are active by default; migration history and historical records are preserved.
+No duplicate occupancy column is added: API seatsTaken is derived from rows whose
+left_at is null, while seats_total remains ride capacity (including the host).
+
+Leave marks a membership inactive without deleting it. Rejoin reactivates the same
+unique (ride_id, user_id) row and updates joined_at; this is not a full membership
+event log. Cancellation marks the ride, retains memberships, and cannot be undone
+in this stage. Cancelled membership counts represent the preserved group, not an
+available booking. Old seeded users are not used to identify the current user.
+
+### New API endpoints
+
+- GET /api/rides/mine: authenticated current-user Activity, private/no-store.
+  Includes hosted and ever-joined rides, with role (host/participant), membership
+  (active/left) and category (upcoming/past/cancelled). Left memberships are clearly
+  labeled. Cancellation takes precedence over departure; past means departure
+  at or before the server's current time. Others' rides are excluded.
+- POST /api/rides/:id/join: authenticates the caller and checks existence, future
+  departure, cancellation, host/duplicate membership, and active capacity.
+- POST /api/rides/:id/leave: non-host only. Marks an existing active membership
+  left; a repeated completed leave returns success. Never-members are rejected.
+  Active membership on a cancelled ride stays historical and cannot be left.
+  Leaving a past ride is allowed; no additional lifecycle system is introduced.
+- POST /api/rides/:id/cancel: host only; sets cancelled_at once, preserving history.
+  Repeated cancellation returns success. Hosts can cancel past rides as well;
+  automatic lifecycle transitions are not implemented.
+
+Mutations accept no identity or ride-edit fields (an empty body or empty JSON object
+is accepted), require the existing same-origin check, and return the updated ride.
+Unknown IDs return 404, authorization failures 401/403, invalid bodies 400, and
+membership/capacity/lifecycle conflicts 409. Public list/detail GET routes are
+unchanged in access policy. Listings retain past/cancelled records with clear labels.
+
+### Concurrency
+
+Every join, leave and cancel runs in a PostgreSQL transaction and first locks the
+ride row with SELECT ... FOR UPDATE. Capacity and state are read only after acquiring
+that lock; at READ COMMITTED, a waiting join sees the preceding commit. Departure is
+checked with PostgreSQL clock_timestamp after the lock, not transaction-start time.
+The existing unique (ride_id,user_id) constraint remains. No in-memory mutex is used.
+This coordinates the application API's writers across processes. Any future direct
+SQL membership writer or capacity-edit operation must follow the same locking rule.
+
+The last-seat test holds the ride lock externally, confirms that both API requests
+are waiting on PostgreSQL locks, releases it, and asserts exactly one 200 and one
+409 with the active count equal to capacity.
+
+### UI and scope
+
+Activity now reads only the current-user API, with Upcoming, Past and Cancelled
+sections and Hosted/Joined/Left labels. It never imports mock ride data or reads
+er_rides / er_participants. Read errors are explicit and can be retried.
+
+Ride Detail offers real Join, Leave and Cancel actions, refreshed state and conflict
+errors. Find Rides links to that operation screen and labels past, cancelled and
+full rides. Fare estimates remain approximate. Create and Detail no longer display
+static travel-time/distance ranges or a purported live surge indicator; users can
+choose “Check live route in Google Maps.” The fare algorithm itself is unchanged.
+No Google Maps Routes API is used.
+
+Tests remain npm test, npm run test:db, and npm run test:ui. The browser fixture
+runs Supabase on loopback port 3101 and the app on 3100 with a disposable migrated
+database; the test-only user selector exists in the fixture only, never production.
+Browser coverage checks public access, safe return navigation, PostgreSQL operations,
+Activity ignoring poisoned localStorage, cancellation and existing auth behavior.
+
+No chat backend, Socket.IO, notifications, reputation, payments, full lifecycle
+automation, Gemini/recommendation changes, admin tools or microservices were added.
+There is no realtime subscription, pagination, ride-edit API, cancellation undo,
+or per-operation audit log. Existing auth limitations and create idempotency debt
+remain. Apply migration 003 to the real application database before running this
+branch there; test migrations alone do not update it.

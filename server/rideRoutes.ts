@@ -1,9 +1,10 @@
 import { sameOrigin, privateResponse } from './auth/routes';
 import { Router, type ErrorRequestHandler, type RequestHandler } from 'express';
+import { operateRide, RideOperationError } from './rideOperations';
 import { z } from 'zod';
 import { createRideSchema } from '../shared/rideInput';
 import { createPool } from './db';
-import { createRide, getRide, listRides } from './rides';
+import { createRide, getRide, listRides, userRides } from './rides';
 
 export function rideRoutes(requireUser: RequestHandler) {
   const router = Router();
@@ -14,8 +15,9 @@ export function rideRoutes(requireUser: RequestHandler) {
     next();
   });
   router.get('/', async (_req, res) => res.json(await listRides(pool!)));
+  router.get('/mine', privateResponse, requireUser, async (_req, res) => res.json(await userRides(pool!, res.locals.user.id)));
   router.get('/:id', async (req, res) => {
-    if (!z.uuid().safeParse(req.params.id).success) return res.status(404).json({ error: 'Ride not found.' });
+    if (typeof req.params.id !== 'string' || !z.uuid().safeParse(req.params.id).success) return res.status(404).json({ error: 'Ride not found.' });
     const ride = await getRide(pool!, req.params.id);
     if (!ride) return res.status(404).json({ error: 'Ride not found.' });
     res.json(ride);
@@ -27,10 +29,19 @@ export function rideRoutes(requireUser: RequestHandler) {
     res.status(201).location(`/api/rides/${ride.id}`).json(ride);
   });
 
+
+  for (const operation of ['join', 'leave', 'cancel'] as const) {
+    router.post('/:id/' + operation, privateResponse, sameOrigin, requireUser, async (req, res) => {
+      if (typeof req.params.id !== 'string' || !z.uuid().safeParse(req.params.id).success) return res.status(404).json({ error: 'Ride not found.' });
+      if (req.body !== undefined && !z.object({}).strict().safeParse(req.body).success) return res.status(400).json({ error: 'This operation accepts no identity or ride fields.' });
+      res.json(await operateRide(pool!, req.params.id, res.locals.user.id, operation));
+    });
+  }
   return router;
 }
 
 export const rideErrorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+  if (error instanceof RideOperationError) return res.status(error.status).json({ error: error.message });
   if (error?.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON body.' });
   if (error?.type === 'entity.too.large') return res.status(413).json({ error: 'Request body is too large.' });
   console.error('Ride database operation failed.');

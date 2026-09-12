@@ -1,9 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
 
-async function signIn(page: Page) {
+async function signIn(page: Page, identity = 'alice') {
+  await page.request.post('http://127.0.0.1:3101/__test/select-user', { data: { user: identity } });
   await page.goto('/#/signin');
   await page.getByRole('button', { name: 'Continue with Google' }).click();
-  await expect(page.getByRole('heading', { name: 'Alice Eagle', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: identity === 'alice' ? 'Alice Eagle' : 'Bob Eagle', exact: true })).toBeVisible();
 }
 
 test('existing hash routes render without application errors', async ({ page }) => {
@@ -21,8 +22,8 @@ test('existing hash routes render without application errors', async ({ page }) 
   // External maps/fonts are not required to verify application navigation.
   await page.route(/https:\/\/(maps\.google\.com|fonts\.googleapis\.com|fonts\.gstatic\.com)/, route => route.abort());
   for (const [route, heading] of [
-    ['/', 'Request a ride'], ['/create', 'Request a ride'], ['/find', 'Find a Ride'],
-    ['/dashboard', 'Ready to fly, Baldwin?'], ['/profile', 'Alice Eagle'],
+    ['/', 'EagleRide'], ['/create', 'Request a ride'], ['/find', 'Find a Ride'],
+    ['/dashboard', 'Activity'], ['/profile', 'Alice Eagle'],
     ['/about', 'EagleRide'], [`/ride/${ride.id}`, 'To Logan Airport (BOS) (C)'],
   ]) {
     await page.goto(`/#${route}`);
@@ -31,7 +32,7 @@ test('existing hash routes render without application errors', async ({ page }) 
     await expect.poll(() => page.getByAltText('EagleRide Logo').first().evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
   }
   await page.goto('/#/chat/r1');
-  await expect(page.getByPlaceholder('Type your message...')).toBeVisible();
+  await expect(page.getByText('Chat is not available yet. No messages are sent or stored.')).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -95,7 +96,7 @@ test('ride loading failures and not-found states are visible', async ({ page }) 
 
 test('authentication protects creation and shows real identity without browser tokens', async ({ page }) => {
   await page.goto('/#/create');
-  await expect(page.getByText('Sign in with your verified BC email to continue.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sign in to EagleRide' })).toBeVisible();
   await expect(page.getByPlaceholder('Pickup location')).toHaveCount(0);
   await signIn(page);
   await expect(page.getByText('alice@bc.edu', { exact: true })).toBeVisible();
@@ -108,7 +109,7 @@ test('authentication protects creation and shows real identity without browser t
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
   expect((await page.request.get('/api/auth/me')).status()).toBe(401);
   await page.goto('/#/profile');
-  await expect(page.getByText('Sign in with your verified BC email to continue.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sign in to EagleRide' })).toBeVisible();
 });
 
 
@@ -134,7 +135,7 @@ test('a delayed identity response cannot restore the profile after logout', asyn
   release();
   await delivered;
   await page.goto('/#/profile');
-  await expect(page.getByText('Sign in with your verified BC email to continue.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sign in to EagleRide' })).toBeVisible();
 });
 
 test('logout failure is explicit and can be retried', async ({ page }) => {
@@ -146,4 +147,76 @@ test('logout failure is explicit and can be retried', async ({ page }) => {
   await page.getByRole('button', { name: 'Retry sign out', exact: true }).click();
   await expect(page.getByRole('alert')).toHaveCount(0);
   expect((await page.request.get('/api/auth/me')).status()).toBe(401);
+});
+
+
+async function createFutureRide(page: Page) {
+  const response = await page.request.post('/api/rides', { headers: { Origin: 'http://127.0.0.1:3100' }, data: {
+    origin: { name: 'Browser operations test', address: null, terminal: null },
+    destination: { name: 'Boston College', address: null, terminal: null },
+    departureTime: new Date(Date.now() + 86400000).toISOString(), seatsTotal: 2,
+    luggageType: 'ONE_SUITCASE', flexibility: 'EXACT', estimatedTotalCostCents: 2400,
+  } });
+  expect(response.status()).toBe(201); return response.json();
+}
+test('public Home, About, list and details stay public; create preserves its return destination', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'EagleRide', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Create Ride', exact: true }).click();
+  await expect(page).toHaveURL(/signin\?returnTo=%2Fcreate/);
+  await page.request.post('http://127.0.0.1:3101/__test/select-user', { data: { user: 'alice' } });
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await expect(page.getByRole('heading', { name: 'Request a ride', exact: true })).toBeVisible();
+  const ride = await createFutureRide(page);
+  await page.goto('/#/profile'); await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
+  for (const [route, heading] of [['/', 'EagleRide'], ['/about', 'EagleRide'], ['/find', 'Find a Ride'], ['/ride/' + ride.id, 'To Boston College']]) {
+    await page.goto('/#' + route);
+    await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
+  }
+  await expect(page.getByRole('link', { name: 'Check live route in Google Maps' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign in to join' })).toBeVisible();
+  await page.getByRole('button', { name: 'Sign in to join' }).click();
+  await expect(page).toHaveURL(/signin\?returnTo=/);
+  await page.request.post('http://127.0.0.1:3101/__test/select-user', { data: { user: 'bob' } });
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await expect(page).toHaveURL(new RegExp('ride/' + ride.id));
+  await expect(page.getByRole('button', { name: 'Join ride', exact: true })).toBeVisible();
+});
+test('PostgreSQL join, leave, cancellation and Activity work across authenticated browsers', async ({ browser }) => {
+  const host = await browser.newContext(), guest = await browser.newContext();
+  try {
+    const hostPage = await host.newPage(), guestPage = await guest.newPage();
+    await signIn(hostPage);
+    const ride = await createFutureRide(hostPage);
+    await signIn(guestPage, 'bob');
+    await guestPage.goto('/#/ride/' + ride.id);
+    await guestPage.getByRole('button', { name: 'Join ride', exact: true }).click();
+    await expect(guestPage.getByRole('button', { name: 'Leave ride', exact: true })).toBeVisible();
+    await guestPage.goto('/#/dashboard');
+    await expect(guestPage.locator('a[href="#/ride/' + ride.id + '"]')).toContainText('Joined');
+    // Poison legacy storage: Activity must remain solely API-backed.
+    await guestPage.evaluate(() => {
+      localStorage.setItem('er_rides', JSON.stringify([{ id: 'fake', destination: 'FAKE LOCAL RIDE' }]));
+      localStorage.setItem('er_participants', JSON.stringify([{ rideId: 'fake' }]));
+    });
+    await guestPage.reload();
+    await expect(guestPage.locator('a[href="#/ride/' + ride.id + '"]')).toBeVisible();
+    await expect(guestPage.getByText('FAKE LOCAL RIDE')).toHaveCount(0);
+    await guestPage.goto('/#/ride/' + ride.id);
+    await guestPage.getByRole('button', { name: 'Leave ride', exact: true }).click();
+    await expect(guestPage.getByRole('button', { name: 'Join ride', exact: true })).toBeVisible();
+    await guestPage.getByRole('button', { name: 'Join ride', exact: true }).click();
+    await expect(guestPage.getByRole('button', { name: 'Leave ride', exact: true })).toBeVisible();
+    await hostPage.goto('/#/ride/' + ride.id);
+    await hostPage.getByRole('button', { name: 'Cancel ride', exact: true }).click();
+    await expect(hostPage.getByText('Cancelled — this ride cannot be joined.')).toBeVisible();
+    await guestPage.goto('/#/dashboard');
+    await expect(guestPage.locator('section').filter({ has: guestPage.getByRole('heading', { name: 'Cancelled', exact: true }) }).locator('a[href="#/ride/' + ride.id + '"]')).toBeVisible();
+    await hostPage.goto('/#/dashboard');
+    await expect(hostPage.locator('a[href="#/ride/' + ride.id + '"]')).toContainText('Hosted by you');
+    await guestPage.goto('/#/ride/' + ride.id);
+    await expect(guestPage.getByRole('button', { name: 'Join ride', exact: true })).toHaveCount(0);
+    await expect(guestPage.getByText('Chat is not available yet. No messages are sent or stored.')).toBeVisible();
+  } finally { await Promise.allSettled([host.close(), guest.close()]); }
 });

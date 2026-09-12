@@ -14,7 +14,7 @@ import {
   Clock
 } from 'lucide-react';
 import { listRides } from '../src/api/rides';
-import { locationLabel, type PersistedRide } from '../shared/rides';
+import { locationLabel, rideCategory, type PersistedRide } from '../shared/rides';
 
 const FindRides: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -107,7 +107,7 @@ const FindRides: React.FC = () => {
                           {ride.seatsTaken} / {ride.seatsTotal}
                         </span>
                         <span className="font-bold text-neutral-400 text-[9px] sm:text-[10px] uppercase tracking-wider">
-                          Joined
+                          {ride.cancelledAt ? 'Cancelled' : rideCategory(ride) === 'past' ? 'Past' : ride.seatsTaken >= ride.seatsTotal ? 'Full' : 'View / Join'}
                         </span>
                       </div>
                     </div>
@@ -137,7 +137,7 @@ const FindRides: React.FC = () => {
               <Filter size={24} className="text-neutral-300" />
             </div>
             <h3 className="text-xl font-bold text-neutral-800">No Matches Found</h3>
-            <p className="text-neutral-500 max-w-xs mx-auto mt-2 mb-8 text-sm">We couldn't find any active rides for this destination. Try a broader search or offer your own ride!</p>
+            <p className="text-neutral-500 max-w-xs mx-auto mt-2 mb-8 text-sm">We couldn't find any rides for this destination. Try a broader search or offer your own ride!</p>
             <button 
               onClick={() => setFilterDestination('ALL')}
               className="bg-black text-white px-8 py-3 rounded-xl font-bold text-sm hover:bg-neutral-800 transition-colors"
