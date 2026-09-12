@@ -482,9 +482,14 @@ test('operations: Activity uses current-user PostgreSQL membership and accurate 
   assert.equal(hosted.find(r => r.id === cancelled.id).category, 'cancelled');
   assert.deepEqual(await (await stranger.client.request('/api/rides/mine')).json(), []);
   await operate(guest, upcoming.id, 'leave');
-  assert.equal((await (await guest.client.request('/api/rides/mine')).json())[0].membership, 'left');
+  assert.deepEqual(await (await guest.client.request('/api/rides/mine')).json(), []);
   await operate(guest, upcoming.id, 'join'); await operate(host, upcoming.id, 'cancel');
   assert.equal((await (await guest.client.request('/api/rides/mine')).json())[0].category, 'cancelled');
+  const cancelledActivity = await (await host.client.request('/api/rides/mine')).json();
+  assert.ok(!cancelledActivity.filter(r => r.category === 'upcoming').some(r => r.id === upcoming.id));
+  assert.ok(cancelledActivity.some(r => r.id === upcoming.id && r.category === 'cancelled'));
+  assert.equal((await db.query('SELECT count(*) FROM rides WHERE id=$1', [upcoming.id])).rows[0].count, '1');
+  assert.equal((await db.query('SELECT count(*) FROM ride_participants WHERE ride_id=$1', [upcoming.id])).rows[0].count, '2');
 });
 test('operations: cross-origin mutations cannot join, leave or cancel', async () => {
   const host = await newActor(), ride = await newRide(host);

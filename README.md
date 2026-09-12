@@ -315,9 +315,9 @@ available booking. Old seeded users are not used to identify the current user.
 ### New API endpoints
 
 - GET /api/rides/mine: authenticated current-user Activity, private/no-store.
-  Includes hosted and ever-joined rides, with role (host/participant), membership
-  (active/left) and category (upcoming/past/cancelled). Left memberships are clearly
-  labeled. Cancellation takes precedence over departure; past means departure
+  Includes hosted rides and current participant memberships, with role
+  (host/participant) and category (upcoming/past/cancelled). Left memberships
+  are excluded from Activity. Cancellation takes precedence over departure; past means departure
   at or before the server's current time. Others' rides are excluded.
 - POST /api/rides/:id/join: authenticates the caller and checks existence, future
   departure, cancellation, host/duplicate membership, and active capacity.
@@ -352,7 +352,8 @@ are waiting on PostgreSQL locks, releases it, and asserts exactly one 200 and on
 ### UI and scope
 
 Activity now reads only the current-user API, with Upcoming, Past and Cancelled
-sections and Hosted/Joined/Left labels. It never imports mock ride data or reads
+sections and Hosted/Joined labels. It refreshes on window focus so cancellations
+made in another tab appear when returning to Activity. It never imports mock ride data or reads
 er_rides / er_participants. Read errors are explicit and can be retried.
 
 Ride Detail offers real Join, Leave and Cancel actions, refreshed state and conflict

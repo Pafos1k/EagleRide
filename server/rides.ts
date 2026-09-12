@@ -53,7 +53,7 @@ export async function createRide(pool: Pool, input: CreateRideInput, actingUserI
 
 export async function userRides(pool: Pool, userId: string): Promise<ActivityRide[]> {
   const result = await pool.query(`${selectRides} WHERE r.host_user_id=$1 OR EXISTS (
-    SELECT 1 FROM ride_participants mine WHERE mine.ride_id=r.id AND mine.user_id=$1
+    SELECT 1 FROM ride_participants mine WHERE mine.ride_id=r.id AND mine.user_id=$1 AND mine.left_at IS NULL
   ) ORDER BY r.departure_at,r.id`, [userId]);
   const now = Date.now();
   return result.rows.map(row => {

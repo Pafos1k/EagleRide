@@ -23,7 +23,7 @@ test('existing hash routes render without application errors', async ({ page }) 
   await page.route(/https:\/\/(maps\.google\.com|fonts\.googleapis\.com|fonts\.gstatic\.com)/, route => route.abort());
   for (const [route, heading] of [
     ['/', 'EagleRide'], ['/create', 'Request a ride'], ['/find', 'Find a Ride'],
-    ['/dashboard', 'Activity'], ['/profile', 'Alice Eagle'],
+    ['/dashboard', 'Ready to fly, Alice?'], ['/profile', 'Alice Eagle'],
     ['/about', 'EagleRide'], [`/ride/${ride.id}`, 'To Logan Airport (BOS) (C)'],
   ]) {
     await page.goto(`/#${route}`);
@@ -218,5 +218,48 @@ test('PostgreSQL join, leave, cancellation and Activity work across authenticate
     await guestPage.goto('/#/ride/' + ride.id);
     await expect(guestPage.getByRole('button', { name: 'Join ride', exact: true })).toHaveCount(0);
     await expect(guestPage.getByText('Chat is not available yet. No messages are sent or stored.')).toBeVisible();
+  } finally { await Promise.allSettled([host.close(), guest.close()]); }
+});
+
+
+test('QA: every public route survives a logged-out auth response and private routes still redirect', async ({ page }) => {
+  await page.route('**/api/auth/me', route => route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Please sign in."}' }));
+  for (const [path, heading] of [['/', 'EagleRide'], ['/#/', 'EagleRide'], ['/#/find', 'Find a Ride'], ['/#/about', 'EagleRide']]) {
+    await page.goto(path);
+    await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
+    await expect(page).not.toHaveURL(/signin/);
+  }
+  await page.goto('/#/ride/00000000-0000-4000-8000-000000000000');
+  await expect(page.getByRole('alert')).toHaveText('Ride not found.');
+  await expect(page).not.toHaveURL(/signin/);
+  for (const path of ['/create', '/dashboard', '/profile']) {
+    await page.goto('/#' + path);
+    await expect(page.getByRole('heading', { name: 'Sign in to EagleRide' })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp('returnTo=' + encodeURIComponent(path)));
+  }
+});
+
+test('QA: Activity keeps personal cards and moves cancellation out of upcoming on return', async ({ browser }) => {
+  const host = await browser.newContext(), guest = await browser.newContext();
+  try {
+    const a = await host.newPage(), b = await guest.newPage();
+    await signIn(a);
+    const own = await createFutureRide(a);
+    await signIn(b, 'bob');
+    const unrelated = await createFutureRide(b);
+    await a.goto('/#/dashboard');
+    await expect(a.getByRole('heading', { name: 'Ready to fly, Alice?', exact: true })).toBeVisible();
+    await expect(a.getByRole('region', { name: 'Upcoming Journeys' }).locator('a[href="#/ride/' + own.id + '"]')).toBeVisible();
+    await expect(a.locator('a[href="#/ride/' + unrelated.id + '"]')).toHaveCount(0);
+    await expect(a.getByRole('button', { name: /join/i })).toHaveCount(0);
+    // Keep Activity mounted while a separate host tab cancels the same ride.
+    const detail = await host.newPage();
+    await detail.goto('/#/ride/' + own.id);
+    await detail.getByRole('button', { name: 'Cancel ride', exact: true }).click();
+    await expect(detail.getByText('Cancelled — this ride cannot be joined.')).toBeVisible();
+    await a.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect(a.getByRole('region', { name: 'Upcoming Journeys' }).locator('a[href="#/ride/' + own.id + '"]')).toHaveCount(0);
+    await expect(a.getByRole('region', { name: 'Cancelled', exact: true }).locator('a[href="#/ride/' + own.id + '"]')).toBeVisible();
+    expect((await a.request.get('/api/rides/' + own.id)).status()).toBe(200);
   } finally { await Promise.allSettled([host.close(), guest.close()]); }
 });
