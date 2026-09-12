@@ -455,6 +455,13 @@ test('operations: cancellation is host-only, repeatable, and preserves participa
   assert.equal((await operate(other, ride.id, 'join')).status, 409);
   assert.equal((await operate(guest, ride.id, 'leave')).status, 409);
   assert.equal((await fetch(origin + '/api/rides/' + ride.id)).status, 200);
+  const discovery = await (await fetch(origin + '/api/rides')).json();
+  assert.ok(discovery.every(item => !item.cancelledAt));
+  assert.ok(!discovery.some(item => item.id === ride.id));
+  for (const actor of [host, guest]) {
+    const activity = await (await actor.client.request('/api/rides/mine')).json();
+    assert.equal(activity.find(item => item.id === ride.id)?.category, 'cancelled');
+  }
 });
 test('operations: missing/departed rides and supplied identity fields are rejected', async () => {
   const host = await newActor(), guest = await newActor();

@@ -18,7 +18,7 @@ function toRide(row: Record<string, any>): PersistedRide {
   };
 }
 export async function listRides(pool: Pool): Promise<PersistedRide[]> {
-  const result = await pool.query(`${selectRides} ORDER BY r.departure_at, r.id`);
+  const result = await pool.query(`${selectRides} WHERE r.cancelled_at IS NULL ORDER BY r.departure_at, r.id`);
   return result.rows.map(toRide);
 }
 export async function getRide(db: Pool | PoolClient, id: string): Promise<PersistedRide | null> {

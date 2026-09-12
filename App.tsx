@@ -238,7 +238,7 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/find" element={<FindRides />} />
-          <Route path="/create" element={<RequireAuth><CreateRide /></RequireAuth>} />
+          <Route path="/create" element={<CreateRide />} />
           <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
           <Route path="/ride/:id" element={<RideDetail />} />
           <Route path="/chat/:id" element={<RequireAuth><p className="p-8 text-center">Chat is not available yet. No messages are sent or stored.</p></RequireAuth>} />

@@ -290,8 +290,10 @@ launching cannot execute browser assertions; report this separately from test fa
 
 ## Stage 4: public browsing, Activity and ride operations
 
-Home (/#/), Find Rides, Ride Details, and About are public. Creation, Activity,
-Profile, ride mutations and chat entry require sign-in. A protected action redirects
+Home (/#/), the Request a Ride form, Find Rides, Ride Details, and About are public.
+Continuing/submitting the request, Activity, Profile, ride mutations and chat entry
+require sign-in. Public discovery excludes cancelled rides; their records remain
+available in ride details and personal Cancelled Activity. A protected action redirects
 to sign-in with a validated in-app return path; optional sessionStorage holds only
 that navigation path across OAuth. Joining still requires a deliberate Join click
 after return (it never auto-joins during a callback). Chat routes now explicitly

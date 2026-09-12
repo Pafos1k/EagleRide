@@ -96,8 +96,8 @@ test('ride loading failures and not-found states are visible', async ({ page }) 
 
 test('authentication protects creation and shows real identity without browser tokens', async ({ page }) => {
   await page.goto('/#/create');
-  await expect(page.getByRole('heading', { name: 'Sign in to EagleRide' })).toBeVisible();
-  await expect(page.getByPlaceholder('Pickup location')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Request a ride', exact: true })).toBeVisible();
+  await expect(page.getByPlaceholder('Pickup location')).toBeVisible();
   await signIn(page);
   await expect(page.getByText('alice@bc.edu', { exact: true })).toBeVisible();
   await expect(page.getByText('Verified BC email', { exact: true })).toBeVisible();
@@ -163,6 +163,11 @@ test('public Home, About, list and details stay public; create preserves its ret
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'EagleRide', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Create Ride', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Request a ride', exact: true })).toBeVisible();
+  await page.getByPlaceholder('Pickup location').fill('Newton Campus');
+  await page.getByPlaceholder('Dropoff location').fill('Boston College');
+  await page.getByRole('heading', { name: 'Request a ride', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page).toHaveURL(/signin\?returnTo=%2Fcreate/);
   await page.request.post('http://127.0.0.1:3101/__test/select-user', { data: { user: 'alice' } });
   await page.getByRole('button', { name: 'Continue with Google' }).click();
@@ -232,10 +237,11 @@ test('QA: every public route survives a logged-out auth response and private rou
   await page.goto('/#/ride/00000000-0000-4000-8000-000000000000');
   await expect(page.getByRole('alert')).toHaveText('Ride not found.');
   await expect(page).not.toHaveURL(/signin/);
-  for (const path of ['/create', '/dashboard', '/profile']) {
+  for (const path of ['/dashboard', '/profile']) {
     await page.goto('/#' + path);
     await expect(page.getByRole('heading', { name: 'Sign in to EagleRide' })).toBeVisible();
     await expect(page).toHaveURL(new RegExp('returnTo=' + encodeURIComponent(path)));
+
   }
 });
 
@@ -261,5 +267,24 @@ test('QA: Activity keeps personal cards and moves cancellation out of upcoming o
     await expect(a.getByRole('region', { name: 'Upcoming Journeys' }).locator('a[href="#/ride/' + own.id + '"]')).toHaveCount(0);
     await expect(a.getByRole('region', { name: 'Cancelled', exact: true }).locator('a[href="#/ride/' + own.id + '"]')).toBeVisible();
     expect((await a.request.get('/api/rides/' + own.id)).status()).toBe(200);
+    await a.goto('/#/find');
+    await expect(a.locator('a[href="#/ride/' + unrelated.id + '"]')).toBeVisible();
+    await expect(a.locator('a[href="#/ride/' + own.id + '"]')).toHaveCount(0);
+
   } finally { await Promise.allSettled([host.close(), guest.close()]); }
+});
+
+test('QA: logged-out header Sign in navigates from public and request routes', async ({ page }) => {
+  await page.route('**/api/auth/me', route => route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Please sign in."}' }));
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const path of ['/', '/find', '/about', '/ride/00000000-0000-4000-8000-000000000000', '/create']) {
+      await page.goto('/#' + path);
+      if (path === '/create') await expect(page.getByPlaceholder('Pickup location')).toBeVisible();
+      const control = page.locator('header a[href="#/signin"]');
+      await control.click();
+      await expect(page).toHaveURL(/#\/signin$/);
+      await expect(page.getByRole('heading', { name: 'Sign in to EagleRide', exact: true })).toBeVisible();
+    }
+  }
 });
