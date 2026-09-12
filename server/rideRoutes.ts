@@ -1,3 +1,4 @@
+import { rideChat } from './messages';
 import { sameOrigin, privateResponse } from './auth/routes';
 import { Router, type ErrorRequestHandler, type RequestHandler } from 'express';
 import { operateRide, RideOperationError } from './rideOperations';
@@ -16,6 +17,16 @@ export function rideRoutes(requireUser: RequestHandler) {
   });
   router.get('/', async (_req, res) => res.json(await listRides(pool!)));
   router.get('/mine', privateResponse, requireUser, async (_req, res) => res.json(await userRides(pool!, res.locals.user.id)));
+  router.get('/:id/messages', privateResponse, requireUser, async (req, res) => {
+    if (!z.uuid().safeParse(req.params.id).success) return res.status(404).json({ error: 'Ride not found.' });
+    res.json(await rideChat(pool!, String(req.params.id), res.locals.user.id));
+  });
+  router.post('/:id/messages', privateResponse, sameOrigin, requireUser, async (req, res) => {
+    if (!z.uuid().safeParse(req.params.id).success) return res.status(404).json({ error: 'Ride not found.' });
+    const input = z.object({ body: z.string().trim().min(1).max(2000) }).strict().safeParse(req.body);
+    if (!input.success) return res.status(400).json({ error: 'Message must contain 1–2000 characters and no other fields.' });
+    res.status(201).json(await rideChat(pool!, String(req.params.id), res.locals.user.id, input.data.body));
+  });
   router.get('/:id', async (req, res) => {
     if (typeof req.params.id !== 'string' || !z.uuid().safeParse(req.params.id).success) return res.status(404).json({ error: 'Ride not found.' });
     const ride = await getRide(pool!, req.params.id);

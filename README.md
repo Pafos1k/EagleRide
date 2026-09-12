@@ -377,3 +377,27 @@ There is no realtime subscription, pagination, ride-edit API, cancellation undo,
 or per-operation audit log. Existing auth limitations and create idempotency debt
 remain. Apply migration 003 to the real application database before running this
 branch there; test migrations alone do not update it.
+
+## Stage 5: persistent ride chat
+
+Migration 004_ride_messages.sql adds messages with database-generated ordered IDs,
+ride and sender foreign keys, body (1–2000 characters), server timestamps, and a
+ride/order index. Existing migrations are unchanged. Apply the migration to the
+application database before using chat.
+
+GET /api/rides/:id/messages and POST /api/rides/:id/messages require a verified
+session and current participation (including the host). POST accepts only body;
+sender identity comes from Express authentication. Both operations lock the ride
+row using the same protocol as leave/cancel. Cancelled rides preserve readable
+history for current participants but reject new messages. Former participants and
+outsiders cannot read or send. Responses are private/no-store; writes require the
+existing same-origin checks. Message IDs provide stable per-ride insertion order.
+
+The existing chat layout now displays persisted messages and real sender names,
+with loading, empty, retry, and send-error states. Refresh chat manually to see
+messages from others. There are no seeded messages, browser chat storage, sockets,
+typing indicators, receipts, attachments, reactions, or notifications. The API
+remains authoritative if membership or cancellation changes while a tab is open.
+History is currently returned in full; pagination and send idempotency are not
+implemented. After an ambiguous network failure, refresh before manually retrying
+a send. No changes to Gemini, reputation, payments, or unrelated UI.

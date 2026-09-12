@@ -32,7 +32,7 @@ test('existing hash routes render without application errors', async ({ page }) 
     await expect.poll(() => page.getByAltText('EagleRide Logo').first().evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
   }
   await page.goto('/#/chat/r1');
-  await expect(page.getByText('Chat is not available yet. No messages are sent or stored.')).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveText('Ride not found.');
   expect(errors).toEqual([]);
 });
 
@@ -222,7 +222,7 @@ test('PostgreSQL join, leave, cancellation and Activity work across authenticate
     await expect(hostPage.locator('a[href="#/ride/' + ride.id + '"]')).toContainText('Hosted by you');
     await guestPage.goto('/#/ride/' + ride.id);
     await expect(guestPage.getByRole('button', { name: 'Join ride', exact: true })).toHaveCount(0);
-    await expect(guestPage.getByText('Chat is not available yet. No messages are sent or stored.')).toBeVisible();
+    await expect(guestPage.getByRole('link', { name: 'View chat history' })).toBeVisible();
   } finally { await Promise.allSettled([host.close(), guest.close()]); }
 });
 
@@ -287,4 +287,30 @@ test('QA: logged-out header Sign in navigates from public and request routes', a
       await expect(page.getByRole('heading', { name: 'Sign in to EagleRide', exact: true })).toBeVisible();
     }
   }
+});
+
+
+test('chat persists across refresh, uses real identity and becomes read-only after cancellation', async ({ page }) => {
+  await signIn(page);
+  const ride = await createFutureRide(page);
+  await page.goto('/#/ride/' + ride.id);
+  await page.getByRole('link', { name: 'Open ride chat' }).click();
+  await expect(page.getByText('No messages yet.', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Hey everyone! Looking forward/)).toHaveCount(0);
+  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Browser persistent message');
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect(page.getByText('Browser persistent message', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Browser persistent message', { exact: true })).toBeVisible();
+  expect((await page.request.post('/api/rides/' + ride.id + '/cancel', { headers: { Origin: 'http://127.0.0.1:3100' } })).status()).toBe(200);
+  await page.getByRole('button', { name: 'Refresh chat' }).click();
+  await expect(page.getByText('This ride is cancelled. Chat history is read-only.')).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeDisabled();
+  await page.goto('/#/profile');
+  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await signIn(page, 'bob');
+  await page.goto('/#/chat/' + ride.id);
+  await expect(page.getByRole('alert')).toHaveText('Only current participants can access this chat.');
+  await expect(page.getByText('Browser persistent message', { exact: true })).toHaveCount(0);
 });

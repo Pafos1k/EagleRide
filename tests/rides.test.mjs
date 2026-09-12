@@ -89,9 +89,9 @@ after(async () => {
 
 test('migrations work on an empty database and are repeatable', async () => {
   assert.equal(await count(), 0);
-  assert.deepEqual((await db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")).rows.map(r => r.table_name), ['ride_participants', 'rides', 'schema_migrations', 'users']);
+  assert.deepEqual((await db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")).rows.map(r => r.table_name), ['messages', 'ride_participants', 'rides', 'schema_migrations', 'users']);
   await migrate();
-  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '3');
+  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '4');
   assert.equal((await db.query("SELECT full_name FROM users WHERE id='u1'")).rows[0].full_name, 'Baldwin Eagle');
 });
 test('POST creates a persisted ride and host participation with server identity and timestamps', async () => {
@@ -522,4 +522,102 @@ test('operations: cross-origin mutations cannot join, leave or cancel', async ()
   for (const operation of ['join', 'leave', 'cancel']) {
     assert.equal((await fetch(origin + '/api/rides/' + ride.id + '/' + operation, { method: 'POST', headers: { Cookie: cookie, Origin: 'https://evil.example' } })).status, 403);
   }
+});
+
+const history = (actor, id) => actor.client.request('/api/rides/' + id + '/messages');
+const message = (actor, id, body) => actor.client.request('/api/rides/' + id + '/messages', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+});
+test('chat: host and participant send/read persisted messages with server identity and ordering', async () => {
+  const host = await newActor(), guest = await newActor(), ride = await newRide(host);
+  await operate(guest, ride.id, 'join');
+  assert.deepEqual((await (await history(host, ride.id)).json()).messages, []);
+  const posted = await message(host, ride.id, { body: '  Meet at the gate  ' });
+  assert.equal(posted.status, 201);
+  const first = (await posted.json()).messages[0];
+  assert.equal(first.senderUserId, host.user.id);
+  assert.equal(first.body, 'Meet at the gate');
+  assert.ok(first.createdAt);
+  const responses = await Promise.all([message(guest, ride.id, { body: 'On my way' }), message(host, ride.id, { body: 'Thanks' })]);
+  assert.ok(responses.every(r => r.status === 201));
+  await Promise.all(responses.map(r => r.arrayBuffer()));
+  const response = await history(guest, ride.id);
+  assert.match(response.headers.get('cache-control'), /no-store/);
+  const savedChat = await response.json();
+  assert.equal(savedChat.messages.length, 3);
+  assert.ok(savedChat.messages.some(m => m.senderUserId === guest.user.id));
+  assert.deepEqual(savedChat.messages.map(m => m.id), savedChat.messages.map(m => m.id).sort((a,b) => BigInt(a) < BigInt(b) ? -1 : 1));
+  await stop(); await start();
+  // Rebind the client's existing session cookies to the restarted server's port.
+  host.client = cookieClient(origin, host.client.jar);
+  assert.deepEqual(await (await history(host, ride.id)).json(), savedChat);
+});
+test('chat: rejects anonymous, outsiders, former members, missing rides and spoofed sender fields', async () => {
+  const host = await newActor(), guest = await newActor(), outside = await newActor(), ride = await newRide(host);
+  const anonymous = { client: cookieClient(origin) };
+  for (const [actor, status] of [[anonymous,401],[outside,403]]) {
+    assert.equal((await history(actor, ride.id)).status, status);
+    assert.equal((await message(actor, ride.id, { body: 'Forbidden' })).status, status);
+  }
+  for (const id of [randomUUID(), 'bad-id']) {
+    assert.equal((await history(host, id)).status, 404);
+    assert.equal((await message(host, id, { body: 'Missing' })).status, 404);
+  }
+  await operate(guest, ride.id, 'join');
+  await operate(guest, ride.id, 'leave');
+  assert.equal((await history(guest, ride.id)).status, 403);
+  assert.equal((await message(guest, ride.id, { body: 'Left' })).status, 403);
+  assert.equal((await message(host, ride.id, { body: 'Spoof', senderUserId: outside.user.id })).status, 400);
+  for (const body of ['', ' \n\t ', 'x'.repeat(2001), 123, null]) {
+    assert.equal((await message(host, ride.id, { body })).status, 400);
+  }
+  const crossOrigin = await fetch(origin + '/api/rides/' + ride.id + '/messages', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example', Cookie: [...host.client.jar].map(([k,v]) => k + '=' + v).join('; ') }, body: JSON.stringify({body:'Blocked'}),
+  });
+  assert.equal(crossOrigin.status, 403);
+  assert.deepEqual((await (await history(host, ride.id)).json()).messages, []);
+  assert.equal((await message(host, ride.id, { body: 'x'.repeat(2000) })).status, 201);
+});
+test('chat: cancellation preserves history for members but prevents all new messages', async () => {
+  const host = await newActor(), guest = await newActor(), outsider = await newActor(), ride = await newRide(host);
+  await operate(guest, ride.id, 'join');
+  const before = await (await message(guest, ride.id, { body: 'Saved history' })).json();
+  await operate(host, ride.id, 'cancel');
+  for (const actor of [host, guest]) {
+    const chat = await (await history(actor, ride.id)).json();
+    assert.ok(chat.cancelledAt);
+    assert.deepEqual(chat.messages, before.messages);
+    assert.equal((await message(actor, ride.id, { body: 'Too late' })).status, 409);
+  }
+  assert.equal((await history(outsider, ride.id)).status, 403);
+  assert.equal((await db.query('SELECT count(*) FROM messages WHERE ride_id=$1', [ride.id])).rows[0].count, '1');
+});
+test('chat: a message waiting behind cancellation is rejected after the lock is released', async () => {
+  const host = await newActor(), ride = await newRide(host), locker = await db.connect();
+  let pending = Promise.resolve([]);
+  try {
+    await locker.query('BEGIN');
+    await locker.query('UPDATE rides SET cancelled_at=clock_timestamp() WHERE id=$1', [ride.id]);
+    pending = Promise.allSettled([(async () => {
+      const response = await message(host, ride.id, { body: 'Racing cancellation' });
+      await response.arrayBuffer();
+      return response.status;
+    })()]);
+    let waiting = 0;
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      waiting = Number((await db.query("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT cancelled_at FROM rides WHERE id=%'")).rows[0].count);
+      if (waiting === 1) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.equal(waiting, 1);
+    await locker.query('COMMIT');
+  } finally {
+    try { await locker.query('ROLLBACK'); }
+    finally { locker.release(); await pending; }
+  }
+  const [result] = await pending;
+  if (result.status === 'rejected') throw result.reason;
+  assert.equal(result.value, 409);
+  assert.equal((await db.query('SELECT count(*) FROM messages WHERE ride_id=$1', [ride.id])).rows[0].count, '0');
 });
