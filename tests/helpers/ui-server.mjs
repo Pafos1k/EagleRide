@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { mockSupabase } from './mock-supabase.mjs';
-const provider = await mockSupabase();
+const provider = await mockSupabase(3101);
 const child = spawn(process.execPath, ['dist/server/server.mjs'], { stdio: 'inherit', env: {
   ...process.env, APP_ORIGIN: 'http://127.0.0.1:3100', SUPABASE_URL: provider.url,
   SUPABASE_PUBLISHABLE_KEY: 'mock-publishable-key',

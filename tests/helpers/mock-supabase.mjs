@@ -25,6 +25,10 @@ export async function mockSupabase(port = 0) {
     let data = '';
     for await (const part of req) data += part;
     const body = data ? JSON.parse(data) : {};
+    if (url.pathname === '/__test/select-user' && port === 3101) {
+      selected = body.user === 'bob' ? bob : alice;
+      return json(200, { selected: body.user === 'bob' ? 'bob' : 'alice' });
+    }
     if (url.pathname === '/auth/v1/authorize') {
       const code = randomUUID();
       codes.set(code, { user: selected, challenge: url.searchParams.get('code_challenge') });

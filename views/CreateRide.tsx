@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import { createRide, listRides } from '../src/api/rides';
 import type { PersistedRide, RideLocation } from '../shared/rides';
+import { useAuth } from '../src/auth/AuthProvider';
+import { signInPath } from '../shared/authReturn';
 import HeroPhone from '../src/components/HeroPhone';
 import { 
   estimateRideCost, 
@@ -46,6 +48,7 @@ const LocationItem = React.memo(({ name, address, icon, onClick }: { name: strin
 
 const CreateRide: React.FC = () => {
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const submitting = useRef(false);
@@ -210,9 +213,16 @@ const CreateRide: React.FC = () => {
     setStep('form');
   }, [selectedDate, selectedTime, pickup, destination, terminal]);
 
+  const requireIdentity = () => {
+    if (authLoading) return false;
+    if (!user) { navigate(signInPath('/create')); return false; }
+    return true;
+  };
+
   const handleContinue = async () => {
     if (submitting.current || !pickup.trim() || !destination.trim()) return;
     if ((pickup.includes('Airport') || destination.includes('Airport')) && !terminal) return;
+    if (!requireIdentity()) return;
     submitting.current = true;
     setBusy(true);
     setError('');
@@ -236,6 +246,7 @@ const CreateRide: React.FC = () => {
 
   const handleCreateRide = async () => {
     if (submitting.current) return;
+    if (!requireIdentity()) return;
     submitting.current = true;
     setBusy(true);
     setError('');
@@ -582,15 +593,10 @@ const CreateRide: React.FC = () => {
                 </div>
                 <div className="flex justify-between items-center text-xs text-neutral-500 pt-3 border-t border-neutral-200">
                   <span className="font-medium">Trip</span>
-                  <span className="font-medium text-neutral-700">{breakdown.distanceMiles} mi · {breakdown.durationLabel}</span>
+                  <a className="underline" target="_blank" rel="noopener noreferrer" href={'https://www.google.com/maps/dir/?api=1&origin=' + encodeURIComponent(pickup) + '&destination=' + encodeURIComponent(destination)}>Check live route in Google Maps</a>
                 </div>
 
-                {breakdown.multiplier > 1.0 && (
-                  <div className="flex justify-between items-center text-xs text-amber-900 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
-                    <span>Surge</span>
-                    <span className="font-bold">{breakdown.multiplier}x</span>
-                  </div>
-                )}
+
 
                 <div className="pt-3 border-t border-neutral-200 flex justify-between items-center">
                   <div>

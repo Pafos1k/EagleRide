@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
+import { signInPath } from '../../shared/authReturn';
 import type { AppUser } from '../../shared/auth';
 
 interface AuthState {
@@ -58,8 +59,9 @@ export function useAuth() {
   return state;
 }
 export function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { user, loading, error } = useAuth();
+  const { user, loading } = useAuth();
+  const location = useLocation();
   if (loading) return <p role="status" className="p-8 text-center">Checking sign-in...</p>;
-  if (!user) return <div className="p-8 text-center space-y-4"><p>{error || 'Sign in with your verified BC email to continue.'}</p><Link className="inline-block bg-black text-white rounded-xl px-6 py-3" to="/signin">Sign in</Link></div>;
+  if (!user) return <Navigate replace to={signInPath(location.pathname + location.search)} />;
   return <>{children}</>;
 }
