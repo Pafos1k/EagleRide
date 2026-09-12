@@ -19,3 +19,8 @@ export const createRide = (input: CreateRideInput) => request<PersistedRide>('/a
 export const myRides = (signal?: AbortSignal) => request<ActivityRide[]>('/api/rides/mine', { signal, cache: 'no-store' });
 export const operateRide = (id: string, operation: 'join' | 'leave' | 'cancel') =>
   request<PersistedRide>(`/api/rides/${encodeURIComponent(id)}/${operation}`, { method: 'POST' });
+
+export const getChat = (id: string, signal?: AbortSignal) => request<import('../../shared/messages').RideChat>(
+  '/api/rides/' + encodeURIComponent(id) + '/messages', { signal, cache: 'no-store' });
+export const sendMessage = (id: string, body: string) => request<import('../../shared/messages').RideChat>(
+  '/api/rides/' + encodeURIComponent(id) + '/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body }) });

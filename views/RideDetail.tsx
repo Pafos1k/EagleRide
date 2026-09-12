@@ -299,7 +299,7 @@ const RideDetail: React.FC = () => {
                 : isJoined ? <button disabled={busy} onClick={() => void act('leave')} className="w-full rounded-xl py-3 border font-bold">Leave ride</button>
                 : <button disabled={busy || rideCategory(ride) === 'past' || ride.seatsTaken >= ride.seatsTotal} onClick={() => void act('join')} className="w-full rounded-xl py-3 bg-black text-white font-bold disabled:opacity-50">{rideCategory(ride) === 'past' ? 'Departed' : ride.seatsTaken >= ride.seatsTotal ? 'Ride full' : user ? 'Join ride' : 'Sign in to join'}</button>}
             </>}
-            <p className="text-xs text-neutral-500 mt-4">Chat is not available yet. No messages are sent or stored.</p>
+            <>{user && (isHost || isJoined) && <Link to={'/chat/' + ride.id} className="block text-center underline text-sm mt-4">{ride.cancelledAt ? 'View chat history' : 'Open ride chat'}</Link>}</>
           </div>
         </div>
       </div>

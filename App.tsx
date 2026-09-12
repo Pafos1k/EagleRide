@@ -16,6 +16,7 @@ import FindRides from './views/FindRides';
 import CreateRide from './views/CreateRide';
 import RideDetail from './views/RideDetail';
 import Home from './views/Home';
+import ChatView from './views/ChatView';
 import { safeReturnTo } from './shared/authReturn';
 import Profile from './views/Profile';
 import Dashboard from './views/Dashboard';
@@ -241,7 +242,7 @@ const App: React.FC = () => {
           <Route path="/create" element={<CreateRide />} />
           <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
           <Route path="/ride/:id" element={<RideDetail />} />
-          <Route path="/chat/:id" element={<RequireAuth><p className="p-8 text-center">Chat is not available yet. No messages are sent or stored.</p></RequireAuth>} />
+          <Route path="/chat/:id" element={<RequireAuth><ChatView /></RequireAuth>} />
           <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
           <Route path="/signin" element={<SignIn />} />
           <Route path="/about" element={<About />} />
