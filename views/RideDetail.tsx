@@ -1,3 +1,6 @@
+import { useRoute } from '../src/hooks/useRoute';
+import RouteInfo from '../src/components/RouteInfo';
+import { estimateRouteFare } from '../src/utils/priceEstimator';
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
@@ -75,6 +78,8 @@ const RideDetail: React.FC = () => {
     } finally { setBusy(false); }
   }
 
+  const routing = useRoute(ride ? { origin: ride.origin, destination: ride.destination,
+    departureTime: Date.parse(ride.departureTime) > Date.now() ? ride.departureTime : undefined } : null);
   if (loading || !ride) {
     return <div className="max-w-4xl mx-auto py-16 px-4 text-center">
       <p role={loading ? 'status' : 'alert'} className="text-neutral-500 font-medium">{loading ? 'Loading ride details...' : error}</p>
@@ -84,12 +89,13 @@ const RideDetail: React.FC = () => {
 
   const actualGroupCount = Math.max(1, participants.length > 0 ? participants.length : (ride.seatsTaken || 1));
   const activeSplitCount = selectedSplitCount ?? actualGroupCount;
-  const totalCost = ride.estimatedTotalCostCents / 100;
+  const routeFare = estimateRouteFare(routing.data);
+  const totalCost = routeFare === null ? null : routeFare / 100;
 
-  const costPerPerson = +(totalCost / activeSplitCount).toFixed(2);
+  const costPerPerson = totalCost === null ? null : +(totalCost / activeSplitCount).toFixed(2);
   const nextSplitCount = Math.min(ride.seatsTotal, actualGroupCount + 1);
-  const nextCostPerPerson = +(totalCost / nextSplitCount).toFixed(2);
-  const savingsPerPerson = +(totalCost - costPerPerson).toFixed(2);
+  const nextCostPerPerson = totalCost === null ? null : +(totalCost / nextSplitCount).toFixed(2);
+  const savingsPerPerson = totalCost === null || costPerPerson === null ? null : +(totalCost - costPerPerson).toFixed(2);
 
   const originTitle = locationLabel(ride.origin);
   const originAddress = ride.origin.address ?? '';
@@ -169,16 +175,7 @@ const RideDetail: React.FC = () => {
               <div className="flex items-center justify-between">
                 <h2 className="text-base sm:text-lg font-bold text-neutral-800">Journey Map</h2>
                 <div className="flex items-center gap-2 text-xs">
-                  <a
-                    href={externalMapsUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-neutral-100 text-neutral-800 font-bold rounded-lg border border-neutral-200 shadow-sm transition-colors text-xs active:scale-95"
-                  >
-                    <Navigation size={12} className="text-neutral-600" />
-                    <span>Check live route in Google Maps</span>
-                    <ExternalLink size={11} className="text-neutral-400" />
-                  </a>
+                  <RouteInfo {...routing} mapsUrl={externalMapsUrl} />
                 </div>
               </div>
 
@@ -238,22 +235,23 @@ const RideDetail: React.FC = () => {
           <div className="bg-white border border-neutral-200 rounded-2xl p-4 sm:p-5 shadow-sm lg:sticky lg:top-4">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-black uppercase tracking-wider text-neutral-400">Approximate fare</span>
-              <span className="text-xs font-semibold text-neutral-500">Total ${totalCost.toFixed(2)}</span>
+              <span className="text-xs font-semibold text-neutral-500">{totalCost === null ? 'Unavailable' : 'Total $' + totalCost.toFixed(2)}</span>
             </div>
 
+            <p className="text-xs text-neutral-500 mb-3">Estimate only, not a live Uber/Lyft quote; tolls and fees may vary.</p>
             {/* Price display */}
             <div className="mb-4">
               <div className="flex items-baseline gap-1.5">
-                <span className="text-3xl sm:text-4xl font-black text-black tracking-tight">${costPerPerson.toFixed(2)}</span>
+                <span className="text-3xl sm:text-4xl font-black text-black tracking-tight">{costPerPerson === null ? 'Unavailable' : '$' + costPerPerson.toFixed(2)}</span>
                 <span className="text-xs sm:text-sm font-semibold text-neutral-400">/ person</span>
               </div>
-              {activeSplitCount > 1 ? (
+              {activeSplitCount > 1 && savingsPerPerson !== null ? (
                 <p className="text-xs font-semibold text-emerald-600 mt-1">
                   Save ${savingsPerPerson.toFixed(2)} vs solo
                 </p>
               ) : (
                 <p className="text-xs font-semibold text-neutral-400 mt-1">
-                  Solo ride
+                  {activeSplitCount === 1 ? 'Solo ride' : activeSplitCount + ' riders'}
                 </p>
               )}
             </div>
@@ -262,7 +260,7 @@ const RideDetail: React.FC = () => {
             <div className="bg-neutral-100 p-1 rounded-xl grid grid-cols-4 gap-1 mb-4">
               {Array.from({ length: ride.seatsTotal }, (_, i) => i + 1).map(count => {
                 const isSelected = count === activeSplitCount;
-                const perPerson = (totalCost / count).toFixed(2);
+                const perPerson = totalCost === null ? '—' : '$' + (totalCost / count).toFixed(2);
                 return (
                   <button
                     key={count}
@@ -278,7 +276,7 @@ const RideDetail: React.FC = () => {
                       {count} {count === 1 ? 'rider' : 'riders'}
                     </div>
                     <div className={`text-xs sm:text-sm font-black mt-0.5 ${isSelected ? 'text-white' : 'text-black'}`}>
-                      ${perPerson}
+                      {perPerson}
                     </div>
                   </button>
                 );
