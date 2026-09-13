@@ -26,7 +26,7 @@ let saved;
 let provider;
 let actor;
 let actingUser;
-const environment = { ...process.env, APP_ORIGIN: 'http://localhost:3000', DATABASE_URL: databaseUrl, PORT: '0', GEMINI_API_KEY: '', API_KEY: '', DOTENV_CONFIG_PATH: 'tests/.env.disabled' };
+const environment = { ...process.env, APP_ORIGIN: 'http://localhost:3000', DATABASE_URL: databaseUrl, PORT: '0', GEMINI_API_KEY: '', API_KEY: '', GOOGLE_MAPS_ROUTES_API_KEY: '', DOTENV_CONFIG_PATH: 'tests/.env.disabled' };
 async function migrate() {
   const child = spawn(process.execPath, ['dist/server/migrate.mjs'], { env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
   let errors = '';
@@ -91,7 +91,7 @@ test('migrations work on an empty database and are repeatable', async () => {
   assert.equal(await count(), 0);
   assert.deepEqual((await db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")).rows.map(r => r.table_name), ['messages', 'ride_participants', 'rides', 'schema_migrations', 'users']);
   await migrate();
-  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '4');
+  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '5');
   assert.equal((await db.query("SELECT full_name FROM users WHERE id='u1'")).rows[0].full_name, 'Baldwin Eagle');
 });
 test('POST creates a persisted ride and host participation with server identity and timestamps', async () => {
@@ -620,4 +620,15 @@ test('chat: a message waiting behind cancellation is rejected after the lock is 
   if (result.status === 'rejected') throw result.reason;
   assert.equal(result.value, 409);
   assert.equal((await db.query('SELECT count(*) FROM messages WHERE ride_id=$1', [ride.id])).rows[0].count, '0');
+});
+
+
+test('routing availability never blocks persistence: unknown fare is nullable and survives restart', async () => {
+  const host = await newActor();
+  const ride = await newRide(host, { origin: { name: 'Unresolved custom pickup', address: null, terminal: null }, estimatedTotalCostCents: null });
+  assert.equal(ride.estimatedTotalCostCents, null);
+  await stop(); await start();
+  const persisted = await (await fetch(origin + '/api/rides/' + ride.id)).json();
+  assert.equal(persisted.estimatedTotalCostCents, null);
+  assert.equal(persisted.origin.name, 'Unresolved custom pickup');
 });

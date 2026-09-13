@@ -401,3 +401,46 @@ remains authoritative if membership or cancellation changes while a tab is open.
 History is currently returned in full; pagination and send idempotency are not
 implemented. After an ambiguous network failure, refresh before manually retrying
 a send. No changes to Gemini, reputation, payments, or unrelated UI.
+
+## Stage 6: real routing and optional fare
+
+Express POST /api/routes uses Google Maps Routes API v2 computeRoutes with DRIVE
+and TRAFFIC_AWARE. The browser cannot choose an upstream URL, API, field mask, or
+travel mode. The response contains distanceMeters, baseline durationSeconds,
+nullable trafficAwareDurationSeconds, source, calculatedAt, departureTime, and
+current/scheduled timing. Provider fallback results are not labeled traffic-aware.
+Future results are predictions, not current live traffic. Past rides show a route
+for departure now, not a reconstructed historical journey.
+
+Configure GOOGLE_MAPS_ROUTES_API_KEY on the server only (never VITE_). Enable Routes
+API and billing in Google Cloud, restrict the key to Routes API and the deployment's
+server IPs where possible, and set appropriate Google quotas/budget alerts.
+Traffic-aware requests use the Pro SKU. No live Google calls run in automated tests.
+
+Inputs retain explicit names, addresses and airport terminals. The five existing
+location presets have exact address mappings. Unknown names without an explicit
+address are unavailable; they are never mapped to generic campuses or destinations.
+Routes performs address resolution internally; there is no separate geocoder here.
+Ambiguous custom name-only form inputs can still be saved and opened in Maps.
+Scheduled route requests are supported up to 30 days ahead.
+
+Cost controls are in-process: 20 requests per IP per minute, 60-second cache (128
+entries), identical in-flight request deduplication, and a five-second provider
+timeout. No Redis, queue, or background polling. The limiter uses Express's default
+socket IP (no trust of forwarded IP headers); deployments behind a proxy share the
+proxy's limit unless trusted-proxy configuration is deliberately added later.
+Limits/caches are per process and reset on restart. Google quotas remain the external
+spend control.
+
+Create and Detail use route distance/time for a clearly approximate fare model;
+there is no Uber/Lyft quote API or synthetic live surge. Model rates remain estimates,
+and tolls/fees may differ. Legacy heuristic helpers remain only for untouched legacy
+mock-store consumers; the active ride screens do not use them.
+When route data is loading/unavailable, route/fare display is unavailable and creation
+still proceeds. Migration 005_optional_fare.sql permits null estimated fare; no route
+results are persisted. Existing saved estimates remain unchanged. Similar ride cards
+handle unknown fares explicitly. Apply migration 005 before deploying this branch.
+
+Run npm run test:routing for mocked provider/endpoint/cache/rate-limit/fare tests,
+alongside npm test, npm run test:db, and npm run test:ui. No notifications, payments,
+Gemini changes, matching redesign, microservices, or unrelated UI redesign were added.

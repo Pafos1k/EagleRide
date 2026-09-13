@@ -13,6 +13,6 @@ export const createRideSchema = z.object({
   seatsTotal: z.number().int().min(1).max(4),
   luggageType: z.enum(['CARRY_ON_ONLY', 'ONE_SUITCASE', 'MULTIPLE']),
   flexibility: z.enum(['EXACT', 'PLUS_MINUS_30', 'PLUS_MINUS_60']),
-  estimatedTotalCostCents: z.number().int().min(0).max(1000000),
+  estimatedTotalCostCents: z.number().int().min(0).max(1000000).nullable().default(null),
   hostNote: text(2000).nullable().default(null),
 }).strict();

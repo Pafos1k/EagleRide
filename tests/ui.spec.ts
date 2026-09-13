@@ -314,3 +314,35 @@ test('chat persists across refresh, uses real identity and becomes read-only aft
   await expect(page.getByRole('alert')).toHaveText('Only current participants can access this chat.');
   await expect(page.getByText('Browser persistent message', { exact: true })).toHaveCount(0);
 });
+
+test('routing unavailable does not block ride creation and never displays fabricated distance or ETA', async ({ page }) => {
+  await signIn(page);
+  await page.route('**/api/routes', route => route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"Unavailable"}' }));
+  await page.goto('/#/create');
+  await page.getByPlaceholder('Pickup location').fill('Unique custom pickup');
+  await page.getByPlaceholder('Dropoff location').fill('Unique custom destination');
+  await page.getByRole('heading', { name: 'Request a ride', exact: true }).click();
+  await expect(page.getByText('Live route information is unavailable.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Check live route in Google Maps' })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Confirm your ride' })).toBeVisible();
+  const saved = page.waitForResponse(response => response.url().endsWith('/api/rides') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Post Ride', exact: true }).click();
+  const response = await saved;
+  expect(response.status()).toBe(201);
+  expect((await response.json()).estimatedTotalCostCents).toBeNull();
+  await expect(page.getByText('Live route information is unavailable.', { exact: true })).toBeVisible();
+  await expect(page.getByText(/55[–-]70/)).toHaveCount(0);
+});
+test('route display uses provider distance and marks fallback duration without live traffic claims', async ({ page }) => {
+  await signIn(page);
+  const ride = await createFutureRide(page);
+  await page.route('**/api/routes', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+    distanceMeters: 16093, durationSeconds: 1200, trafficAwareDurationSeconds: null, source: 'google-routes',
+    calculatedAt: new Date().toISOString(), departureTime: new Date().toISOString(), timing: 'current',
+  }) }));
+  await page.goto('/#/ride/' + ride.id);
+  await expect(page.getByText('10.0 mi · 20 min driving', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Driving estimate · traffic unavailable/)).toBeVisible();
+  await expect(page.getByText(/Traffic-aware driving estimate/)).toHaveCount(0);
+});

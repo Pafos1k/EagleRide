@@ -17,6 +17,7 @@ function launch(overrides = {}) {
   const env = { ...process.env, ...overrides };
   delete env.GEMINI_API_KEY;
   delete env.API_KEY;
+  delete env.GOOGLE_MAPS_ROUTES_API_KEY;
   // Prevent a developer's local credentials from reaching regression tests.
   env.DOTENV_CONFIG_PATH = path.join(temporaryDirectory, '.env');
   return spawn(process.execPath, [entry], {

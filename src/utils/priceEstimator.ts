@@ -540,3 +540,13 @@ export const estimateRideCost = (
   const breakdown = getFareBreakdown(destination, departureTime, pickup, 1, terminal);
   return breakdown.totalEstimatedCost;
 };
+
+// Route-backed estimate only. These are approximate model rates, not a provider quote.
+// No synthetic traffic/surge or unverified toll assumptions are applied.
+export function estimateRouteFare(route: import('../../shared/routing').RouteResult | null): number | null {
+  if (!route) return null;
+  const miles = route.distanceMeters / 1609.344;
+  const minutes = (route.trafficAwareDurationSeconds ?? route.durationSeconds) / 60;
+  const cents = Math.round(Math.max(11, 2.55 + 3.15 + miles * 1.68 + minutes * 0.38) * 100);
+  return Number.isSafeInteger(cents) && cents >= 0 && cents <= 1000000 ? cents : null;
+}
