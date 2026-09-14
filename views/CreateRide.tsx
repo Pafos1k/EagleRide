@@ -285,7 +285,7 @@ const CreateRide: React.FC = () => {
           {/* PICKUP */}
           <div className="relative" ref={pickupRef}>
             <div 
-              className={`uber-input-container ${focusedField === 'pickup' ? 'active' : ''}`}
+              className={`uber-input-container max-md:!h-16 ${focusedField === 'pickup' ? 'active' : ''}`}
               onClick={() => { setFocusedField('pickup'); setShowDatePicker(false); setShowTimePicker(false); }}
             >
               <div className="w-4 h-4 rounded-full border-2 border-black flex items-center justify-center bg-white shrink-0 relative z-10">
@@ -326,7 +326,7 @@ const CreateRide: React.FC = () => {
           {/* DESTINATION */}
           <div className="relative" ref={destinationRef}>
             <div 
-              className={`uber-input-container ${focusedField === 'destination' ? 'active' : ''}`}
+              className={`uber-input-container max-md:!h-16 ${focusedField === 'destination' ? 'active' : ''}`}
               onClick={() => { setFocusedField('destination'); setShowDatePicker(false); setShowTimePicker(false); }}
             >
               <div className="w-4 h-4 border-2 border-black flex items-center justify-center bg-white shrink-0 relative z-10">
@@ -388,7 +388,7 @@ const CreateRide: React.FC = () => {
           <div className="grid grid-cols-2 gap-3 mt-1 w-full md:max-w-[440px] mx-auto md:col-span-3">
             <div className="min-w-0 relative">
               <div 
-                className={`flex items-center h-[44px] px-3 sm:px-4 rounded-xl cursor-pointer transition-all border-2
+                className={`flex items-center h-[52px] md:h-[44px] px-3 sm:px-4 rounded-xl cursor-pointer transition-all border-2
                 ${showDatePicker ? 'border-black bg-white' : 'border-transparent bg-neutral-100 hover:bg-neutral-200'}`}
                 onClick={() => { setShowDatePicker(!showDatePicker); setShowTimePicker(false); setFocusedField(null); }}
               >
@@ -448,7 +448,7 @@ const CreateRide: React.FC = () => {
 
             <div className="min-w-0 relative">
               <div 
-                className={`flex items-center h-[44px] px-3 sm:px-4 rounded-xl cursor-pointer transition-all border-2
+                className={`flex items-center h-[52px] md:h-[44px] px-3 sm:px-4 rounded-xl cursor-pointer transition-all border-2
                 ${showTimePicker ? 'border-black bg-white' : 'border-transparent bg-neutral-100 hover:bg-neutral-200'}`}
                 onClick={() => { setShowTimePicker(!showTimePicker); setShowDatePicker(false); setFocusedField(null); }}
               >
@@ -484,8 +484,8 @@ const CreateRide: React.FC = () => {
             <button
               onClick={handleContinue}
               disabled={busy || !pickup || !destination || ((pickup.includes('Airport') || destination.includes('Airport')) && !terminal)}
-              className={`w-full px-8 py-3.5 sm:py-4 rounded-xl font-bold text-[17px] sm:text-[19px] transition-all active:scale-[0.98] ${
-                pickup && destination && (!(pickup.includes('Airport') || destination.includes('Airport')) || terminal) ? 'bg-black text-white hover:bg-neutral-800' : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+              className={`w-full max-md:h-[60px] px-8 py-3.5 sm:py-4 rounded-xl font-bold text-[17px] sm:text-[19px] transition-all active:scale-[0.98] ${
+                pickup && destination && (!(pickup.includes('Airport') || destination.includes('Airport')) || terminal) ? 'bg-black text-white' : 'bg-black text-neutral-400 cursor-not-allowed'
               }`}
             >
               Continue

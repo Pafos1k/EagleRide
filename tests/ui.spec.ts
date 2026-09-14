@@ -393,7 +393,8 @@ test('request hero centers responsive controls and keeps confidence below the fo
     const time=await page.getByText('Now',{exact:true}).locator('..').boundingBox();
     expect(Math.abs(date!.y-time!.y)).toBeLessThan(5);
     expect(Math.abs(date!.width-time!.width)).toBeLessThan(2);
-    expect(date!.height).toBeLessThan(52);
+    expect(date!.height).toBe(viewport.width < 768 ? 52 : 44);
+    await expect(page.getByRole('button',{name:'Continue',exact:true})).toHaveCSS('background-color','rgb(0, 0, 0)');
     const confidence=await page.getByText('Ride with confidence',{exact:true}).boundingBox();
     expect(pickup).not.toBeNull();expect(dropoff).not.toBeNull();expect(proceed).not.toBeNull();
     expect(confidence!.y).toBeGreaterThanOrEqual(viewport.height);
