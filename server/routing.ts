@@ -1,6 +1,5 @@
-import { Router } from 'express';
-import { sameOrigin, privateResponse } from './auth/routes';
-import { routeInputSchema, type RouteInput, type RouteResult } from '../shared/routing';
+import type { RequestHandler } from 'express';
+import { type RouteInput, type RouteResult } from '../shared/routing';
 
 const GOOGLE_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes';
 const MASK = 'routes.distanceMeters,routes.duration,routes.staticDuration,fallbackInfo';
@@ -78,27 +77,22 @@ export function createRoutingService(options: { key?: string; fetcher?: typeof f
     try { return await task; } finally { pending.delete(key); }
   };
 }
-export function routingRoutes(options: Parameters<typeof createRoutingService>[0] & { limit?: number } = {}) {
-  const router = Router(), route = createRoutingService(options);
+export function routingQuota(limit = 20) {
   const clients = new Map<string, { count: number; expires: number }>();
-  router.post('/', privateResponse, sameOrigin, async (req, res) => {
-    const now = Date.now(), ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+  return (ip: string): number => {
+    const now = Date.now();
     for (const [key, entry] of clients) if (entry.expires <= now) clients.delete(key);
-    if (!clients.has(ip) && clients.size >= 1000) return res.status(429).json({ error: 'Too many routing requests. Please try later.' });
+    if (!clients.has(ip) && clients.size >= 1000) return 60;
     const entry = clients.get(ip) ?? { count: 0, expires: now + 60000 };
     clients.set(ip, entry);
-    if (++entry.count > (options.limit ?? 20)) {
-      res.setHeader('Retry-After', Math.ceil((entry.expires - now) / 1000));
-      return res.status(429).json({ error: 'Too many routing requests. Please try later.' });
-    }
-    const input = routeInputSchema.safeParse(req.body);
-    if (!input.success) return res.status(400).json({ error: 'Invalid route input.' });
-    try { res.json(await route(input.data)); }
-    catch (error) {
-      res.status(error instanceof RoutingError ? error.status : 503).json({
-        error: error instanceof RoutingError ? error.message : 'Route information is unavailable.',
-      });
-    }
-  });
-  return router;
+    return ++entry.count > limit ? Math.ceil((entry.expires - now) / 1000) : 0;
+  };
+}
+export function routingLimit(limit = 20): RequestHandler {
+  const quota = routingQuota(limit);
+  return (req, res, next) => {
+    const retry = quota(req.ip ?? req.socket.remoteAddress ?? 'unknown');
+    if (retry) return res.set('Retry-After', String(retry)).status(429).json({ error: 'Too many routing requests. Please try later.' });
+    next();
+  };
 }

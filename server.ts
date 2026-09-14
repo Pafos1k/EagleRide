@@ -1,5 +1,4 @@
 import express from "express";
-import { routingRoutes } from "./server/routing";
 import { authentication, authErrors } from "./server/auth/routes";
 import { rideRoutes, rideErrorHandler } from "./server/rideRoutes";
 import path from "path";
@@ -43,10 +42,6 @@ async function startServer() {
   app.use("/api/rides", rideRoutes(auth.requireUser));
   app.use("/api/rides", authErrors);
   app.use("/api/rides", rideErrorHandler);
-
-  app.use("/api/routes", routingRoutes({ key: process.env.GOOGLE_MAPS_ROUTES_API_KEY }));
-  app.use("/api/routes", authErrors);
-  app.use("/api/routes", rideErrorHandler);
 
   // AI Smart Ride Recommendations
   app.post("/api/recommendations", async (req, res) => {

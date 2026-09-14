@@ -444,3 +444,35 @@ handle unknown fares explicitly. Apply migration 005 before deploying this branc
 Run npm run test:routing for mocked provider/endpoint/cache/rate-limit/fare tests,
 alongside npm test, npm run test:db, and npm run test:ui. No notifications, payments,
 Gemini changes, matching redesign, microservices, or unrelated UI redesign were added.
+
+## Shared route snapshots (routing optimization)
+
+Only opening Ride Detail requests POST /api/rides/:id/route-snapshot. Create, Find,
+and Activity never request routing. The former arbitrary-location /api/routes
+endpoint is removed. Maps links open Google directly without calling this endpoint.
+Creating a ride does not require a route or a fare.
+
+Migration 006_route_snapshots.sql adds one row per ride, with normalized route JSON,
+the first successful route's fixed fare, last attempt time, highest attempted
+milestone, and a latest-refresh-failed flag. No background jobs exist.
+Ride Detail reuses the shared PostgreSQL snapshot across viewers and processes.
+
+The first open of an active future ride attempts a snapshot. There is no 24-hour
+refresh: it is reused until 6h, 2h, and 1h before departure. A late first open consumes
+earlier milestones; no catch-up requests occur. In the final hour subsequent
+attempts are at least 20 minutes apart. Cancelled/past rides never attempt routing,
+including when they lack a snapshot. Successful historical snapshots remain visible.
+The ride row is locked during the bounded lookup, coordinating concurrent viewers
+and existing cancellation operations. Failed attempts consume their milestone/
+20-minute allowance too. Subsequent traffic refreshes never reprice an existing fare.
+
+If a refresh fails, existing route data and fare remain visible with their full
+last-updated timestamp and an explicit failed-refresh/not-current warning. Only
+rides without a successful snapshot show unavailable route information. A quota
+failure is recorded like a provider failure; stored snapshot reads do not consume
+the provider-attempt quota. Data is always labeled as a stored estimate, not live
+traffic. There is no persisted user-specific snapshot or browser-local authority.
+
+Run npm run test:snapshots with TEST_DATABASE_URL for deterministic PostgreSQL
+milestone, concurrency and failure tests, plus the existing routing/server/database
+and browser suites. Apply migration 006 to the application database before use.

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import express from 'express';
 import { once } from 'node:events';
-import { createRoutingService, routingRoutes, routeAddress } from '../server/routing.ts';
+import { createRoutingService, routingLimit, routeAddress } from '../server/routing.ts';
 import { authErrors } from '../server/auth/routes.ts';
 import { estimateRouteFare } from '../src/utils/priceEstimator.ts';
 const input = { origin: { name: 'Boston College', address: null, terminal: null },
@@ -62,27 +62,17 @@ test('locations preserve explicit addresses and reject ambiguous names without g
   await assert.rejects(service({...input,departureTime:'2000-01-01T00:00:00Z'}),/departure time/);
   await assert.rejects(service({...input,origin:{name:'Some Boston cafe',address:null,terminal:null}}),/complete address/);
 });
-test('endpoint validates requests, applies rate limits, and never exposes provider secrets', async () => {
-  const app=express();app.use(express.json());
-  let calls=0;
-  app.use('/api/routes',routingRoutes({key:'SECRET_TEST_KEY',limit:4,fetcher:async()=>{calls++;return response(raw);}}));
-  app.use(authErrors);
+test('snapshot rate limiter bounds requests without upstream access', async () => {
+  const app=express();app.post('/snapshot',routingLimit(2),(_req,res)=>res.json({ok:true}));
   const server=app.listen(0,'127.0.0.1');await once(server,'listening');
-  const origin='http://127.0.0.1:'+server.address().port;
-  const previous=process.env.APP_ORIGIN;process.env.APP_ORIGIN=origin;
-  const post=(body,headers={})=>fetch(origin+'/api/routes',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json',...headers},body:JSON.stringify(body)});
+  const url='http://127.0.0.1:'+server.address().port+'/snapshot';
   try {
-    assert.equal((await post({...input,url:'https://evil.example'})).status,400);
-    assert.equal((await post({...input,origin:{name:'x'.repeat(201)}})).status,400);
-    const good=await post(input);assert.equal(good.status,200);
-    assert.doesNotMatch(await good.text(),/SECRET_TEST_KEY/);
-    assert.equal((await post(input,{Origin:'https://evil.example'})).status,403);
-    assert.equal((await post(input)).status,200);
-    const limited=await post(input);assert.equal(limited.status,429);assert.ok(limited.headers.get('retry-after'));
-    assert.equal(calls,1);
-  } finally {if(previous===undefined)delete process.env.APP_ORIGIN;else process.env.APP_ORIGIN=previous; await new Promise(resolve=>{server.close(resolve);server.closeAllConnections();});}
+    assert.equal((await fetch(url,{method:'POST'})).status,200);
+    assert.equal((await fetch(url,{method:'POST'})).status,200);
+    const limited=await fetch(url,{method:'POST'});
+    assert.equal(limited.status,429);assert.ok(limited.headers.get('retry-after'));
+  } finally {await new Promise(resolve=>{server.close(resolve);server.closeAllConnections();});}
 });
-
 
 test('immediate departure omits upstream timestamp and near-future scheduling preserves it exactly', async () => {
   const now = Date.parse('2026-09-13T12:00:00Z');
@@ -102,4 +92,21 @@ test('immediate departure omits upstream timestamp and near-future scheduling pr
   assert.equal(scheduled.departureTime, departureTime);
   assert.equal(scheduled.timing, 'scheduled');
   assert.equal(scheduled.trafficAwareDurationSeconds, 1800);
+});
+
+test('route UI preserves failed-refresh data with timestamp and only shows unavailable without data',async()=>{
+  const {createElement}=await import('react');
+  const {renderToStaticMarkup}=await import('react-dom/server');
+  const {default:RouteInfo,mapsRouteUrl}=await import('../src/components/RouteInfo.tsx');
+  const mapsUrl=mapsRouteUrl({origin:{name:'Boston College'},destination:{name:'Newton Campus'}});
+  assert.match(mapsUrl,/^https:\/\/www.google.com\/maps\/dir/);
+  const html=renderToStaticMarkup(createElement(RouteInfo,{loading:false,latestRefreshFailed:true,mapsUrl,data:{
+    distanceMeters:16093,durationSeconds:1200,trafficAwareDurationSeconds:1800,source:'google-routes',
+    calculatedAt:'2026-09-01T12:00:00Z',departureTime:'2026-09-17T12:00:00Z',timing:'scheduled',
+  }}));
+  assert.match(html,/10.0 mi · 30 min driving/);assert.match(html,/Baseline driving ETA: 20 min/);assert.match(html,/Latest refresh failed/);
+  assert.match(html,/not current\/live traffic/);assert.match(html,/Google Maps · Updated/);
+  assert.doesNotMatch(html,/Live route information is unavailable/);
+  const empty=renderToStaticMarkup(createElement(RouteInfo,{loading:false,latestRefreshFailed:true,mapsUrl,data:null}));
+  assert.match(empty,/Live route information is unavailable/);
 });

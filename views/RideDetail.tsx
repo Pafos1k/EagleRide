@@ -1,6 +1,5 @@
 import { useRoute } from '../src/hooks/useRoute';
 import RouteInfo from '../src/components/RouteInfo';
-import { estimateRouteFare } from '../src/utils/priceEstimator';
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
@@ -78,8 +77,7 @@ const RideDetail: React.FC = () => {
     } finally { setBusy(false); }
   }
 
-  const routing = useRoute(ride ? { origin: ride.origin, destination: ride.destination,
-    departureTime: Date.parse(ride.departureTime) > Date.now() ? ride.departureTime : undefined } : null);
+  const routing = useRoute(ride?.id);
   if (loading || !ride) {
     return <div className="max-w-4xl mx-auto py-16 px-4 text-center">
       <p role={loading ? 'status' : 'alert'} className="text-neutral-500 font-medium">{loading ? 'Loading ride details...' : error}</p>
@@ -89,7 +87,7 @@ const RideDetail: React.FC = () => {
 
   const actualGroupCount = Math.max(1, participants.length > 0 ? participants.length : (ride.seatsTaken || 1));
   const activeSplitCount = selectedSplitCount ?? actualGroupCount;
-  const routeFare = estimateRouteFare(routing.data);
+  const routeFare = routing.estimatedFareCents;
   const totalCost = routeFare === null ? null : routeFare / 100;
 
   const costPerPerson = totalCost === null ? null : +(totalCost / activeSplitCount).toFixed(2);

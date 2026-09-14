@@ -1,21 +1,21 @@
 import { useEffect, useState } from 'react';
-import type { RouteInput, RouteResult } from '../../shared/routing';
-export function useRoute(input: RouteInput | null) {
-  const key = input ? JSON.stringify(input) : '';
-  const [state, setState] = useState<{ key: string; data: RouteResult | null; loading: boolean }>({ key: '', data: null, loading: false });
+import type { RouteSnapshot } from '../../shared/routing';
+export function useRoute(rideId: string | undefined) {
+  const [state, setState] = useState<{ id: string; snapshot: RouteSnapshot | null; loading: boolean }>({ id: '', snapshot: null, loading: false });
   useEffect(() => {
-    if (!key) return;
+    if (!rideId) return;
     const controller = new AbortController();
-    setState({ key, data: null, loading: true });
-    const timer = setTimeout(() => {
-      fetch('/api/routes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: key, signal: controller.signal })
-        .then(async response => {
-          if (!response.ok) throw new Error('Unavailable');
-          return response.json() as Promise<RouteResult>;
-        }).then(data => { if (!controller.signal.aborted) setState({ key, data, loading: false }); })
-        .catch(() => { if (!controller.signal.aborted) setState({ key, data: null, loading: false }); });
-    }, 500);
-    return () => { clearTimeout(timer); controller.abort(); };
-  }, [key]);
-  return { data: state.key === key ? state.data : null, loading: !!key && (state.key !== key || state.loading) };
+    setState({ id: rideId, snapshot: null, loading: true });
+    fetch('/api/rides/' + encodeURIComponent(rideId) + '/route-snapshot', { method: 'POST', signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) throw new Error('Unavailable');
+        return response.json() as Promise<RouteSnapshot>;
+      }).then(snapshot => { if (!controller.signal.aborted) setState({ id: rideId, snapshot, loading: false }); })
+      .catch(() => { if (!controller.signal.aborted) setState({ id: rideId, snapshot: null, loading: false }); });
+    return () => controller.abort();
+  }, [rideId]);
+  const snapshot = state.id === rideId ? state.snapshot : null;
+  return { data: snapshot?.data ?? null, estimatedFareCents: snapshot?.estimatedFareCents ?? null,
+    latestRefreshFailed: snapshot?.latestRefreshFailed ?? false,
+    loading: !!rideId && (state.id !== rideId || state.loading) };
 }

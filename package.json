@@ -14,7 +14,8 @@
     "preview": "npm start",
     "db:migrate": "node dist/server/migrate.mjs",
     "test:db": "node --test tests/rides.test.mjs",
-    "test:routing": "node --import tsx --test tests/routing.test.mjs"
+    "test:routing": "node --import tsx --test tests/routing.test.mjs",
+    "test:snapshots": "node --import tsx --test tests/routeSnapshots.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.41.0",

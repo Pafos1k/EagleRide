@@ -14,3 +14,10 @@ export interface RouteResult {
   departureTime: string;
   timing: 'current' | 'scheduled';
 }
+
+export interface RouteSnapshot {
+  data: RouteResult | null;
+  estimatedFareCents: number | null;
+  lastAttemptAt: string | null;
+  latestRefreshFailed: boolean;
+}

@@ -15,7 +15,6 @@ import Logo from './src/components/Logo';
 import FindRides from './views/FindRides';
 import CreateRide from './views/CreateRide';
 import RideDetail from './views/RideDetail';
-import Home from './views/Home';
 import ChatView from './views/ChatView';
 import { safeReturnTo } from './shared/authReturn';
 import Profile from './views/Profile';
@@ -36,7 +35,7 @@ const App: React.FC = () => {
     } catch { /* Optional navigation state only; no tokens are stored here. */ }
   }, [user, location.pathname, navigate]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const isRequestRide = location.pathname === '/create';
+  const isRequestRide = (location.pathname === '/' || location.pathname === '/create');
   const isFindSplit = location.pathname === '/find';
   const isDashboard = location.pathname === '/dashboard';
   const isProfile = location.pathname === '/profile';
@@ -237,7 +236,7 @@ const App: React.FC = () => {
       {/* Content Area */}
       <main className="flex-1">
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<CreateRide />} />
           <Route path="/find" element={<FindRides />} />
           <Route path="/create" element={<CreateRide />} />
           <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
