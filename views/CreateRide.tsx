@@ -277,16 +277,15 @@ const CreateRide: React.FC = () => {
         className="w-full min-h-[calc(100svh-80px)] px-5 sm:px-8 py-16 sm:py-24 flex flex-col items-center justify-center relative z-10"
       >
         <div className="w-full max-w-[1040px] flex flex-col items-center">
-          <h1 className="text-4xl sm:text-5xl lg:text-[64px] font-bold leading-[1.1] mb-10 sm:mb-12 lg:mb-14 tracking-tight text-black text-center">Request a ride</h1>
+          <h1 className="text-4xl sm:text-5xl lg:text-[64px] font-bold leading-[1.1] mb-8 sm:mb-10 lg:mb-10 tracking-tight text-black text-center">Request a ride</h1>
 
           {error && <p role="alert" className="mb-4 text-sm text-red-700">{error}</p>}
           {busy && <p role="status" className="mb-4 text-sm text-neutral-500">Please wait...</p>}
-          <fieldset disabled={busy} inert={busy} className="space-y-5 relative w-full">
-          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 items-center">
+          <fieldset disabled={busy} inert={busy} className="relative w-full grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 items-center">
           {/* PICKUP */}
           <div className="relative" ref={pickupRef}>
             <div 
-              className={`uber-input-container ${focusedField === 'pickup' ? 'active shadow-lg' : ''}`}
+              className={`uber-input-container ${focusedField === 'pickup' ? 'active' : ''}`}
               onClick={() => { setFocusedField('pickup'); setShowDatePicker(false); setShowTimePicker(false); }}
             >
               <div className="w-4 h-4 rounded-full border-2 border-black flex items-center justify-center bg-white shrink-0 relative z-10">
@@ -327,7 +326,7 @@ const CreateRide: React.FC = () => {
           {/* DESTINATION */}
           <div className="relative" ref={destinationRef}>
             <div 
-              className={`uber-input-container ${focusedField === 'destination' ? 'active shadow-lg' : ''}`}
+              className={`uber-input-container ${focusedField === 'destination' ? 'active' : ''}`}
               onClick={() => { setFocusedField('destination'); setShowDatePicker(false); setShowTimePicker(false); }}
             >
               <div className="w-4 h-4 border-2 border-black flex items-center justify-center bg-white shrink-0 relative z-10">
@@ -362,25 +361,9 @@ const CreateRide: React.FC = () => {
             )}
           </div>
 
-        {step === 'form' && (
-          <div className="w-full md:w-auto">
-            <button
-              onClick={handleContinue}
-              disabled={busy || !pickup || !destination || ((pickup.includes('Airport') || destination.includes('Airport')) && !terminal)}
-              className={`w-full px-8 py-3.5 sm:py-4 rounded-xl font-bold text-[17px] sm:text-[19px] transition-all active:scale-[0.98] ${
-                pickup && destination && (!(pickup.includes('Airport') || destination.includes('Airport')) || terminal) ? 'bg-black text-white hover:bg-neutral-800 shadow-xl' : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
-              }`}
-            >
-              Continue
-            </button>
-          </div>
-        )}
-
-          </div>
-
           {/* TERMINAL SELECTION FOR LOGAN */}
           {(pickup.includes('Airport') || destination.includes('Airport')) && (
-            <div className="animate-slide space-y-6 w-full max-w-lg mx-auto">
+            <div className="animate-slide space-y-6 w-full max-w-lg mx-auto md:col-span-3">
               <div>
                 <p className="text-[12px] font-bold text-neutral-400 uppercase tracking-widest mb-3 ml-1">
                   Terminal
@@ -402,15 +385,15 @@ const CreateRide: React.FC = () => {
           )}
 
           {/* DATE & TIME SELECTORS - Precise UI Match to Screenshot */}
-          <div className="flex flex-col sm:flex-row gap-3 pt-2 w-full max-w-lg mx-auto">
-            <div className="flex-1 relative">
+          <div className="grid grid-cols-2 gap-3 mt-1 w-full md:max-w-[440px] mx-auto md:col-span-3">
+            <div className="min-w-0 relative">
               <div 
-                className={`flex items-center h-[52px] sm:h-[56px] px-4 sm:px-5 rounded-xl cursor-pointer transition-all border-2 
-                ${showDatePicker ? 'border-black bg-white shadow-md' : 'border-transparent bg-neutral-100 hover:bg-neutral-200'}`}
+                className={`flex items-center h-[44px] px-3 sm:px-4 rounded-xl cursor-pointer transition-all border-2
+                ${showDatePicker ? 'border-black bg-white' : 'border-transparent bg-neutral-100 hover:bg-neutral-200'}`}
                 onClick={() => { setShowDatePicker(!showDatePicker); setShowTimePicker(false); setFocusedField(null); }}
               >
                 <Calendar size={18} className="text-black shrink-0 sm:w-5 sm:h-5" />
-                <span className="ml-3 sm:ml-4 font-bold text-[15px] sm:text-[17px] text-black tracking-tight">{formatDateLabel(selectedDate)}</span>
+                <span className="ml-2 sm:ml-3 font-medium text-[14px] sm:text-[15px] text-black tracking-tight">{formatDateLabel(selectedDate)}</span>
               </div>
               
               {showDatePicker && (
@@ -463,14 +446,14 @@ const CreateRide: React.FC = () => {
               )}
             </div>
 
-            <div className="flex-1 relative">
+            <div className="min-w-0 relative">
               <div 
-                className={`flex items-center h-[52px] sm:h-[56px] px-4 sm:px-5 rounded-xl cursor-pointer transition-all border-2 
-                ${showTimePicker ? 'border-black bg-white shadow-md' : 'border-transparent bg-neutral-100 hover:bg-neutral-200'}`}
+                className={`flex items-center h-[44px] px-3 sm:px-4 rounded-xl cursor-pointer transition-all border-2
+                ${showTimePicker ? 'border-black bg-white' : 'border-transparent bg-neutral-100 hover:bg-neutral-200'}`}
                 onClick={() => { setShowTimePicker(!showTimePicker); setShowDatePicker(false); setFocusedField(null); }}
               >
                 <Clock size={18} className="text-black shrink-0 sm:w-5 sm:h-5" />
-                <span className="ml-3 sm:ml-4 font-bold text-[15px] sm:text-[17px] text-black tracking-tight">{selectedTime}</span>
+                <span className="ml-2 sm:ml-3 font-medium text-[14px] sm:text-[15px] text-black tracking-tight">{selectedTime}</span>
                 <ChevronDown size={18} className="ml-auto text-black shrink-0 sm:w-5 sm:h-5" />
               </div>
               {showTimePicker && (
@@ -496,6 +479,20 @@ const CreateRide: React.FC = () => {
               )}
             </div>
           </div>
+        {step === 'form' && (
+          <div className="w-full md:w-auto md:col-start-3 md:row-start-1">
+            <button
+              onClick={handleContinue}
+              disabled={busy || !pickup || !destination || ((pickup.includes('Airport') || destination.includes('Airport')) && !terminal)}
+              className={`w-full px-8 py-3.5 sm:py-4 rounded-xl font-bold text-[17px] sm:text-[19px] transition-all active:scale-[0.98] ${
+                pickup && destination && (!(pickup.includes('Airport') || destination.includes('Airport')) || terminal) ? 'bg-black text-white hover:bg-neutral-800' : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+              }`}
+            >
+              Continue
+            </button>
+          </div>
+        )}
+
         </fieldset>
 
         {step === 'similar' && (

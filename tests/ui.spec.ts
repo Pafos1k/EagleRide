@@ -389,6 +389,11 @@ test('request hero centers responsive controls and keeps confidence below the fo
     const pickup=await page.getByPlaceholder('Pickup location').boundingBox();
     const dropoff=await page.getByPlaceholder('Dropoff location').boundingBox();
     const proceed=await page.getByRole('button',{name:'Continue',exact:true}).boundingBox();
+    const date=await page.getByText('Today',{exact:true}).locator('..').boundingBox();
+    const time=await page.getByText('Now',{exact:true}).locator('..').boundingBox();
+    expect(Math.abs(date!.y-time!.y)).toBeLessThan(5);
+    expect(Math.abs(date!.width-time!.width)).toBeLessThan(2);
+    expect(date!.height).toBeLessThan(52);
     const confidence=await page.getByText('Ride with confidence',{exact:true}).boundingBox();
     expect(pickup).not.toBeNull();expect(dropoff).not.toBeNull();expect(proceed).not.toBeNull();
     expect(confidence!.y).toBeGreaterThanOrEqual(viewport.height);
@@ -398,7 +403,8 @@ test('request hero centers responsive controls and keeps confidence below the fo
       expect(proceed!.x).toBeGreaterThan(dropoff!.x);
     }else{
       expect(dropoff!.y).toBeGreaterThan(pickup!.y);
-      expect(proceed!.y).toBeGreaterThan(dropoff!.y);
+      expect(date!.y).toBeGreaterThan(dropoff!.y);
+      expect(proceed!.y).toBeGreaterThan(date!.y+date!.height);
       expect(proceed!.width).toBeGreaterThan(viewport.width-60);
     }
     await expect(page.getByRole('link',{name:'Check live route in Google Maps'})).toHaveCount(0);
