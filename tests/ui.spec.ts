@@ -380,3 +380,27 @@ test('failed snapshot refresh displays the previous data, fixed fare and timesta
   await expect(page.getByText(/Google Maps · Updated/)).toBeVisible();
   await expect(page.getByText('Live route information is unavailable.',{exact:true})).toHaveCount(0);
 });
+
+test('request hero centers responsive controls and keeps confidence below the fold', async ({ page }) => {
+  for (const viewport of [{width:1440,height:900},{width:390,height:844}]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/');
+    await expect(page.getByRole('heading',{name:'Request a ride',exact:true})).toBeVisible();
+    const pickup=await page.getByPlaceholder('Pickup location').boundingBox();
+    const dropoff=await page.getByPlaceholder('Dropoff location').boundingBox();
+    const proceed=await page.getByRole('button',{name:'Continue',exact:true}).boundingBox();
+    const confidence=await page.getByText('Ride with confidence',{exact:true}).boundingBox();
+    expect(pickup).not.toBeNull();expect(dropoff).not.toBeNull();expect(proceed).not.toBeNull();
+    expect(confidence!.y).toBeGreaterThanOrEqual(viewport.height);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    if(viewport.width>768){
+      expect(Math.abs(pickup!.y-dropoff!.y)).toBeLessThan(5);
+      expect(proceed!.x).toBeGreaterThan(dropoff!.x);
+    }else{
+      expect(dropoff!.y).toBeGreaterThan(pickup!.y);
+      expect(proceed!.y).toBeGreaterThan(dropoff!.y);
+      expect(proceed!.width).toBeGreaterThan(viewport.width-60);
+    }
+    await expect(page.getByRole('link',{name:'Check live route in Google Maps'})).toHaveCount(0);
+  }
+});

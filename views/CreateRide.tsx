@@ -21,7 +21,6 @@ import { createRide, listRides } from '../src/api/rides';
 import type { PersistedRide, RideLocation } from '../shared/rides';
 import { useAuth } from '../src/auth/AuthProvider';
 import { signInPath } from '../shared/authReturn';
-import HeroPhone from '../src/components/HeroPhone';
 import { 
   LuggageType,
   FlexibilityType
@@ -271,18 +270,19 @@ const CreateRide: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row min-h-[calc(100vh-80px)] lg:h-[calc(100vh-80px)] bg-white" ref={containerRef}>
-      {/* LEFT PANEL */}
+    <div className="w-full bg-white" ref={containerRef}>
+      {/* Primary request experience */}
       <div 
         ref={leftPanelRef} 
-        className="w-full lg:w-[45%] bg-white lg:h-full lg:overflow-y-auto px-4 sm:px-6 lg:px-8 pt-6 pb-12 sm:pt-8 sm:pb-16 lg:pt-10 lg:pb-24 flex flex-col items-center justify-start shrink-0 relative z-10"
+        className="w-full min-h-[calc(100svh-80px)] px-5 sm:px-8 py-16 sm:py-24 flex flex-col items-center justify-center relative z-10"
       >
-        <div className="w-full max-w-[480px] flex flex-col">
-          <h1 className="text-3xl sm:text-4xl lg:text-[44px] font-bold leading-[1.1] mb-6 sm:mb-8 lg:mb-10 tracking-tight text-black text-center">Request a ride</h1>
+        <div className="w-full max-w-[1040px] flex flex-col items-center">
+          <h1 className="text-4xl sm:text-5xl lg:text-[64px] font-bold leading-[1.1] mb-10 sm:mb-12 lg:mb-14 tracking-tight text-black text-center">Request a ride</h1>
 
           {error && <p role="alert" className="mb-4 text-sm text-red-700">{error}</p>}
           {busy && <p role="status" className="mb-4 text-sm text-neutral-500">Please wait...</p>}
-          <fieldset disabled={busy} inert={busy} className="space-y-4 relative w-full">
+          <fieldset disabled={busy} inert={busy} className="space-y-5 relative w-full">
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 items-center">
           {/* PICKUP */}
           <div className="relative" ref={pickupRef}>
             <div 
@@ -362,9 +362,25 @@ const CreateRide: React.FC = () => {
             )}
           </div>
 
+        {step === 'form' && (
+          <div className="w-full md:w-auto">
+            <button
+              onClick={handleContinue}
+              disabled={busy || !pickup || !destination || ((pickup.includes('Airport') || destination.includes('Airport')) && !terminal)}
+              className={`w-full px-8 py-3.5 sm:py-4 rounded-xl font-bold text-[17px] sm:text-[19px] transition-all active:scale-[0.98] ${
+                pickup && destination && (!(pickup.includes('Airport') || destination.includes('Airport')) || terminal) ? 'bg-black text-white hover:bg-neutral-800 shadow-xl' : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+              }`}
+            >
+              Continue
+            </button>
+          </div>
+        )}
+
+          </div>
+
           {/* TERMINAL SELECTION FOR LOGAN */}
           {(pickup.includes('Airport') || destination.includes('Airport')) && (
-            <div className="animate-slide space-y-6">
+            <div className="animate-slide space-y-6 w-full max-w-lg mx-auto">
               <div>
                 <p className="text-[12px] font-bold text-neutral-400 uppercase tracking-widest mb-3 ml-1">
                   Terminal
@@ -386,7 +402,7 @@ const CreateRide: React.FC = () => {
           )}
 
           {/* DATE & TIME SELECTORS - Precise UI Match to Screenshot */}
-          <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3 pt-2">
+          <div className="flex flex-col sm:flex-row gap-3 pt-2 w-full max-w-lg mx-auto">
             <div className="flex-1 relative">
               <div 
                 className={`flex items-center h-[52px] sm:h-[56px] px-4 sm:px-5 rounded-xl cursor-pointer transition-all border-2 
@@ -482,20 +498,6 @@ const CreateRide: React.FC = () => {
           </div>
         </fieldset>
 
-        {step === 'form' && (
-          <div className="mt-8 sm:mt-12 max-w-lg w-full">
-            <button 
-              onClick={handleContinue}
-              disabled={busy || !pickup || !destination || ((pickup.includes('Airport') || destination.includes('Airport')) && !terminal)}
-              className={`w-full py-3.5 sm:py-4 rounded-xl font-bold text-[17px] sm:text-[19px] transition-all active:scale-[0.98] ${
-                pickup && destination && (!(pickup.includes('Airport') || destination.includes('Airport')) || terminal) ? 'bg-black text-white hover:bg-neutral-800 shadow-xl' : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
-              }`}
-            >
-              Continue
-            </button>
-          </div>
-        )}
-
         {step === 'similar' && (
           <div className="mt-8 sm:mt-12 max-w-lg w-full animate-slide">
             <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Similar rides found</h2>
@@ -588,7 +590,10 @@ const CreateRide: React.FC = () => {
           );
         })()}
 
-        <div className="mt-8 sm:mt-12 lg:mt-16 bg-neutral-50 rounded-2xl p-4 sm:p-6 border border-neutral-100 w-full">
+        </div>
+      </div>
+
+        <div className="w-full max-w-[1040px] mx-auto px-5 sm:px-8 py-16 sm:py-24">
           <div className="flex items-center space-x-3 mb-3 sm:mb-4">
              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-black text-white rounded-full flex items-center justify-center shrink-0">
                <Navigation size={18} className="sm:w-5 sm:h-5" />
@@ -599,13 +604,6 @@ const CreateRide: React.FC = () => {
             Get a reliable ride in minutes. EagleRide matches you with other BC students heading to the same destination to help you save on fares.
           </p>
         </div>
-        </div>
-      </div>
-
-      {/* RIGHT PANEL - Dynamic Visualization */}
-      <div className="flex-1 bg-white hidden lg:flex items-center justify-center relative overflow-visible">
-        <HeroPhone />
-      </div>
     </div>
   );
 };
