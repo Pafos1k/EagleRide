@@ -162,8 +162,7 @@ async function createFutureRide(page: Page) {
 test('public Home, About, list and details stay public; create preserves its return destination', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Request a ride', exact: true })).toBeVisible();
-  await page.getByRole('link', { name: 'Create Ride', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Request a ride', exact: true })).toBeVisible();
+  // Home is the request form; continuing still requires authentication.
   await page.getByPlaceholder('Pickup location').fill('Newton Campus');
   await page.getByPlaceholder('Dropoff location').fill('Boston College');
   await page.getByRole('heading', { name: 'Request a ride', exact: true }).click();
