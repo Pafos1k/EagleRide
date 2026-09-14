@@ -10,6 +10,7 @@ export default function RouteInfo({ data, loading, mapsUrl, latestRefreshFailed 
       <p>{(data.distanceMeters / 1609.344).toFixed(1)} mi · {Math.ceil((data.trafficAwareDurationSeconds ?? data.durationSeconds) / 60)} min driving</p>
       <p>{data.trafficAwareDurationSeconds !== null ? 'Stored traffic-aware driving estimate' : 'Driving estimate · traffic unavailable'}
         {data.timing === 'scheduled' ? ' for ' + new Date(data.departureTime).toLocaleString() : ' for departure at ' + new Date(data.departureTime).toLocaleString()}</p>
+      <p>Baseline driving ETA: {Math.ceil(data.durationSeconds / 60)} min</p>
       {latestRefreshFailed && <p role="status">Latest refresh failed. Showing the last successful snapshot; this is not current/live traffic.</p>}
       <p>Google Maps · Updated {new Date(data.calculatedAt).toLocaleString()}</p>
     </> : <p>Live route information is unavailable.</p>}

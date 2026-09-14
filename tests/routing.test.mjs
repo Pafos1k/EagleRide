@@ -104,7 +104,7 @@ test('route UI preserves failed-refresh data with timestamp and only shows unava
     distanceMeters:16093,durationSeconds:1200,trafficAwareDurationSeconds:1800,source:'google-routes',
     calculatedAt:'2026-09-01T12:00:00Z',departureTime:'2026-09-17T12:00:00Z',timing:'scheduled',
   }}));
-  assert.match(html,/10.0 mi · 30 min driving/);assert.match(html,/Latest refresh failed/);
+  assert.match(html,/10.0 mi · 30 min driving/);assert.match(html,/Baseline driving ETA: 20 min/);assert.match(html,/Latest refresh failed/);
   assert.match(html,/not current\/live traffic/);assert.match(html,/Google Maps · Updated/);
   assert.doesNotMatch(html,/Live route information is unavailable/);
   const empty=renderToStaticMarkup(createElement(RouteInfo,{loading:false,latestRefreshFailed:true,mapsUrl,data:null}));

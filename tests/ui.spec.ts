@@ -22,7 +22,7 @@ test('existing hash routes render without application errors', async ({ page }) 
   // External maps/fonts are not required to verify application navigation.
   await page.route(/https:\/\/(maps\.google\.com|fonts\.googleapis\.com|fonts\.gstatic\.com)/, route => route.abort());
   for (const [route, heading] of [
-    ['/', 'EagleRide'], ['/create', 'Request a ride'], ['/find', 'Find a Ride'],
+    ['/', 'Request a ride'], ['/create', 'Request a ride'], ['/find', 'Find a Ride'],
     ['/dashboard', 'Ready to fly, Alice?'], ['/profile', 'Alice Eagle'],
     ['/about', 'EagleRide'], [`/ride/${ride.id}`, 'To Logan Airport (BOS) (C)'],
   ]) {
@@ -161,7 +161,7 @@ async function createFutureRide(page: Page) {
 }
 test('public Home, About, list and details stay public; create preserves its return destination', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'EagleRide', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Request a ride', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Create Ride', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Request a ride', exact: true })).toBeVisible();
   await page.getByPlaceholder('Pickup location').fill('Newton Campus');
@@ -175,7 +175,7 @@ test('public Home, About, list and details stay public; create preserves its ret
   const ride = await createFutureRide(page);
   await page.goto('/#/profile'); await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
-  for (const [route, heading] of [['/', 'EagleRide'], ['/about', 'EagleRide'], ['/find', 'Find a Ride'], ['/ride/' + ride.id, 'To Boston College']]) {
+  for (const [route, heading] of [['/', 'Request a ride'], ['/about', 'EagleRide'], ['/find', 'Find a Ride'], ['/ride/' + ride.id, 'To Boston College']]) {
     await page.goto('/#' + route);
     await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
   }
@@ -229,7 +229,7 @@ test('PostgreSQL join, leave, cancellation and Activity work across authenticate
 
 test('QA: every public route survives a logged-out auth response and private routes still redirect', async ({ page }) => {
   await page.route('**/api/auth/me', route => route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Please sign in."}' }));
-  for (const [path, heading] of [['/', 'EagleRide'], ['/#/', 'EagleRide'], ['/#/find', 'Find a Ride'], ['/#/about', 'EagleRide']]) {
+  for (const [path, heading] of [['/', 'Request a ride'], ['/#/', 'Request a ride'], ['/#/find', 'Find a Ride'], ['/#/about', 'EagleRide']]) {
     await page.goto(path);
     await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
     await expect(page).not.toHaveURL(/signin/);
@@ -322,8 +322,8 @@ test('routing unavailable does not block ride creation and never displays fabric
   await page.getByPlaceholder('Pickup location').fill('Unique custom pickup');
   await page.getByPlaceholder('Dropoff location').fill('Unique custom destination');
   await page.getByRole('heading', { name: 'Request a ride', exact: true }).click();
-  await expect(page.getByText('Route and fare estimates are available on Ride Detail after creating a ride.')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Check live route in Google Maps' })).toBeVisible();
+  await expect(page.getByText(/Estimated fare|Available on Ride Detail|Split 4 ways/)).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Check live route in Google Maps' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Confirm your ride' })).toBeVisible();
   const saved = page.waitForResponse(response => response.url().endsWith('/api/rides') && response.request().method() === 'POST');
@@ -348,18 +348,19 @@ test('route display uses provider distance and marks fallback duration without l
 });
 
 
-test('Create, Find and Activity never request routing; Maps opens directly', async ({ page }) => {
+test('Create, Find and Activity never request routing; confirmation has no route or fare content', async ({ page }) => {
   await signIn(page);
   const calls: string[] = [];
   page.on('request', request => { if (/api\/routes|route-snapshot/.test(request.url())) calls.push(request.url()); });
-  await page.goto('/#/create');
+  await page.goto('/');
+  await expect(page.getByRole('heading',{name:'Request a ride',exact:true})).toBeVisible();
   await page.getByPlaceholder('Pickup location').fill('No routing pickup ' + Date.now());
   await page.getByPlaceholder('Dropoff location').fill('No routing destination');
   await page.getByRole('heading', {name:'Request a ride',exact:true}).click();
   await page.getByRole('button', {name:'Continue',exact:true}).click();
   await expect(page.getByRole('heading', {name:'Confirm your ride'})).toBeVisible();
-  const maps=page.getByRole('link',{name:'Check live route in Google Maps'});
-  expect(await maps.getAttribute('href')).toMatch(/^https:\/\/www.google.com\/maps\/dir/);
+  await expect(page.getByRole('link',{name:'Check live route in Google Maps'})).toHaveCount(0);
+  await expect(page.getByText(/Estimated fare|Available on Ride Detail|Split 4 ways/)).toHaveCount(0);
   for(const route of ['/find','/dashboard']){
     await page.goto('/#'+route);
     await expect(page.getByRole('heading',{name:route==='/find'?'Find a Ride':'Ready to fly, Alice?',exact:true})).toBeVisible();

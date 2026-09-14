@@ -22,7 +22,6 @@ import type { PersistedRide, RideLocation } from '../shared/rides';
 import { useAuth } from '../src/auth/AuthProvider';
 import { signInPath } from '../shared/authReturn';
 import HeroPhone from '../src/components/HeroPhone';
-import { mapsRouteUrl } from '../src/components/RouteInfo';
 import { 
   LuggageType,
   FlexibilityType
@@ -241,10 +240,6 @@ const CreateRide: React.FC = () => {
     terminal: name.includes('Airport') ? terminal as RideLocation['terminal'] : null,
   });
 
-  const mapsInput = pickup.trim() && destination.trim() ? { origin: rideLocation(pickup), destination: rideLocation(destination) } : null;
-  const fareCents: number | null = null;
-  const fareLabel = 'Available on Ride Detail';
-
   const handleCreateRide = async () => {
     if (submitting.current) return;
     if (!requireIdentity()) return;
@@ -257,7 +252,7 @@ const CreateRide: React.FC = () => {
         origin: rideLocation(pickup), destination: rideLocation(destination),
         departureTime, seatsTotal: 4, luggageType: LuggageType.ONE_SUITCASE,
         flexibility: FlexibilityType.PLUS_MINUS_30,
-        estimatedTotalCostCents: fareCents,
+        estimatedTotalCostCents: null,
         hostNote: null,
       });
       navigate(`/ride/${ride.id}`);
@@ -487,28 +482,8 @@ const CreateRide: React.FC = () => {
           </div>
         </fieldset>
 
-        {mapsInput && <div className="max-w-lg w-full text-xs text-neutral-500 my-3"><a className="underline" target="_blank" rel="noopener noreferrer" href={mapsRouteUrl(mapsInput)}>Check live route in Google Maps</a><p>Route and fare estimates are available on Ride Detail after creating a ride.</p></div>}
-
         {step === 'form' && (
           <div className="mt-8 sm:mt-12 max-w-lg w-full">
-            {pickup && destination && (!(pickup.includes('Airport') || destination.includes('Airport')) || terminal) && (() => {
-
-              return (
-                <div className="mb-4 px-4 py-3 bg-neutral-50 rounded-2xl border border-neutral-200 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs text-neutral-500 font-medium">Estimated fare</span>
-                    <div className="flex items-baseline gap-2 mt-0.5">
-                      <span className="font-bold text-lg text-neutral-900">{fareLabel}</span>
-
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-xs text-emerald-600 font-medium">Split 4 ways</span>
-                    <p className="font-bold text-base text-emerald-700 mt-0.5">{fareCents === null ? 'Unavailable' : '$' + (fareCents / 400).toFixed(2)} <span className="text-xs font-normal text-neutral-400">/ ea</span></p>
-                  </div>
-                </div>
-              );
-            })()}
             <button 
               onClick={handleContinue}
               disabled={busy || !pickup || !destination || ((pickup.includes('Airport') || destination.includes('Airport')) && !terminal)}
@@ -526,8 +501,6 @@ const CreateRide: React.FC = () => {
             <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Similar rides found</h2>
             <div className="space-y-4 mb-6 sm:mb-8">
               {similarRides.map((ride) => {
-                const currentCost = ride.estimatedTotalCostCents === null ? null : ((ride.estimatedTotalCostCents / 100) / Math.max(1, ride.seatsTaken)).toFixed(2);
-                const nextCost = ride.estimatedTotalCostCents === null ? null : ((ride.estimatedTotalCostCents / 100) / (ride.seatsTaken + 1)).toFixed(2);
                 return (
                   <div key={ride.id} className="bg-neutral-50 p-4 sm:p-5 rounded-2xl border border-neutral-100 flex items-center justify-between gap-3">
                     <div className="min-w-0">
@@ -535,12 +508,10 @@ const CreateRide: React.FC = () => {
                         <p className="font-bold text-[15px] sm:text-[17px]">
                           {new Date(ride.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </p>
-                        <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">
-                          {nextCost === null ? 'Fare unavailable' : '$' + nextCost + ' / person'}
-                        </span>
+
                       </div>
                       <p className="text-neutral-500 text-[12px] sm:text-[13px] truncate mt-0.5">
-                        {(ride.origin.terminal || ride.destination.terminal) ? `Terminal ${ride.origin.terminal || ride.destination.terminal} • ` : ''}{ride.seatsTotal - ride.seatsTaken} seats left {currentCost === null ? '(fare unavailable)' : '(currently $' + currentCost + ')'}
+                        {(ride.origin.terminal || ride.destination.terminal) ? `Terminal ${ride.origin.terminal || ride.destination.terminal} • ` : ''}{ride.seatsTotal - ride.seatsTaken} seats left
                       </p>
                     </div>
                     <button 
@@ -598,15 +569,6 @@ const CreateRide: React.FC = () => {
 
 
 
-                <div className="pt-3 border-t border-neutral-200 flex justify-between items-center">
-                  <div>
-                    <span className="text-neutral-500 font-medium text-sm block">Estimated fare</span>
-                    <span className="text-xs text-emerald-600 font-medium">{fareCents === null ? 'Unavailable' : '~$' + (fareCents / 400).toFixed(2)} / rider (split 4 ways)</span>
-                  </div>
-                  <span className="text-2xl sm:text-3xl font-bold text-black">
-                    {fareLabel}
-                  </span>
-                </div>
               </div>
               <button 
                 onClick={handleCreateRide}
