@@ -317,12 +317,12 @@ test('chat persists across refresh, uses real identity and becomes read-only aft
 
 test('routing unavailable does not block ride creation and never displays fabricated distance or ETA', async ({ page }) => {
   await signIn(page);
-  await page.route('**/api/routes', route => route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"Unavailable"}' }));
+  await page.route('**/route-snapshot', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({data:null,estimatedFareCents:null,lastAttemptAt:new Date().toISOString(),latestRefreshFailed:true}) }));
   await page.goto('/#/create');
   await page.getByPlaceholder('Pickup location').fill('Unique custom pickup');
   await page.getByPlaceholder('Dropoff location').fill('Unique custom destination');
   await page.getByRole('heading', { name: 'Request a ride', exact: true }).click();
-  await expect(page.getByText('Live route information is unavailable.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Route and fare estimates are available on Ride Detail after creating a ride.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Check live route in Google Maps' })).toBeVisible();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Confirm your ride' })).toBeVisible();
@@ -337,12 +337,46 @@ test('routing unavailable does not block ride creation and never displays fabric
 test('route display uses provider distance and marks fallback duration without live traffic claims', async ({ page }) => {
   await signIn(page);
   const ride = await createFutureRide(page);
-  await page.route('**/api/routes', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+  await page.route('**/route-snapshot', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({estimatedFareCents:2400,latestRefreshFailed:false,lastAttemptAt:null,data:{
     distanceMeters: 16093, durationSeconds: 1200, trafficAwareDurationSeconds: null, source: 'google-routes',
     calculatedAt: new Date().toISOString(), departureTime: new Date().toISOString(), timing: 'current',
-  }) }));
+  }}) }));
   await page.goto('/#/ride/' + ride.id);
   await expect(page.getByText('10.0 mi · 20 min driving', { exact: true })).toBeVisible();
   await expect(page.getByText(/Driving estimate · traffic unavailable/)).toBeVisible();
   await expect(page.getByText(/Traffic-aware driving estimate/)).toHaveCount(0);
+});
+
+
+test('Create, Find and Activity never request routing; Maps opens directly', async ({ page }) => {
+  await signIn(page);
+  const calls: string[] = [];
+  page.on('request', request => { if (/api\/routes|route-snapshot/.test(request.url())) calls.push(request.url()); });
+  await page.goto('/#/create');
+  await page.getByPlaceholder('Pickup location').fill('No routing pickup ' + Date.now());
+  await page.getByPlaceholder('Dropoff location').fill('No routing destination');
+  await page.getByRole('heading', {name:'Request a ride',exact:true}).click();
+  await page.getByRole('button', {name:'Continue',exact:true}).click();
+  await expect(page.getByRole('heading', {name:'Confirm your ride'})).toBeVisible();
+  const maps=page.getByRole('link',{name:'Check live route in Google Maps'});
+  expect(await maps.getAttribute('href')).toMatch(/^https:\/\/www.google.com\/maps\/dir/);
+  for(const route of ['/find','/dashboard']){
+    await page.goto('/#'+route);
+    await expect(page.getByRole('heading',{name:route==='/find'?'Find a Ride':'Ready to fly, Alice?',exact:true})).toBeVisible();
+  }
+  expect(calls).toEqual([]);
+});
+test('failed snapshot refresh displays the previous data, fixed fare and timestamp', async ({page}) => {
+  await signIn(page);const ride=await createFutureRide(page);
+  await page.route('**/route-snapshot',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({
+    data:{distanceMeters:16093,durationSeconds:1200,trafficAwareDurationSeconds:1800,source:'google-routes',
+      calculatedAt:'2026-09-01T12:00:00Z',departureTime:'2026-09-17T12:00:00Z',timing:'scheduled'},
+    estimatedFareCents:2400,lastAttemptAt:new Date().toISOString(),latestRefreshFailed:true,
+  })}));
+  await page.goto('/#/ride/'+ride.id);
+  await expect(page.getByText('10.0 mi · 30 min driving',{exact:true})).toBeVisible();
+  await expect(page.getByText('Total $24.00',{exact:true})).toBeVisible();
+  await expect(page.getByText(/Latest refresh failed/)).toBeVisible();
+  await expect(page.getByText(/Google Maps · Updated/)).toBeVisible();
+  await expect(page.getByText('Live route information is unavailable.',{exact:true})).toHaveCount(0);
 });

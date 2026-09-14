@@ -1,3 +1,5 @@
+import { createRoutingService, routingQuota } from './routing';
+import { rideRouteSnapshot } from './routeSnapshots';
 import { rideChat } from './messages';
 import { sameOrigin, privateResponse } from './auth/routes';
 import { Router, type ErrorRequestHandler, type RequestHandler } from 'express';
@@ -14,6 +16,17 @@ export function rideRoutes(requireUser: RequestHandler) {
   router.use((_req, res, next) => {
     if (!pool) return res.status(503).json({ error: 'Ride storage is not configured.' });
     next();
+  });
+  const lookup = createRoutingService({ key: process.env.GOOGLE_MAPS_ROUTES_API_KEY });
+  const quota = routingQuota();
+  router.post('/:id/route-snapshot', privateResponse, sameOrigin, async (req, res) => {
+    if (!z.uuid().safeParse(req.params.id).success) return res.status(404).json({ error: 'Ride not found.' });
+    if (req.body !== undefined && !z.object({}).strict().safeParse(req.body).success) return res.status(400).json({ error: 'Route snapshots accept no location or refresh overrides.' });
+    res.json(await rideRouteSnapshot(pool!, String(req.params.id), async input => {
+      // Limit new provider attempts, not access to already stored snapshots.
+      if (quota(req.ip ?? req.socket.remoteAddress ?? 'unknown')) throw new Error('Routing limit reached');
+      return lookup(input);
+    }));
   });
   router.get('/', async (_req, res) => res.json(await listRides(pool!)));
   router.get('/mine', privateResponse, requireUser, async (_req, res) => res.json(await userRides(pool!, res.locals.user.id)));

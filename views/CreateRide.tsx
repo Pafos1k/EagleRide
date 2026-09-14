@@ -22,9 +22,7 @@ import type { PersistedRide, RideLocation } from '../shared/rides';
 import { useAuth } from '../src/auth/AuthProvider';
 import { signInPath } from '../shared/authReturn';
 import HeroPhone from '../src/components/HeroPhone';
-import { estimateRouteFare } from '../src/utils/priceEstimator';
-import { useRoute } from '../src/hooks/useRoute';
-import RouteInfo, { mapsRouteUrl } from '../src/components/RouteInfo';
+import { mapsRouteUrl } from '../src/components/RouteInfo';
 import { 
   LuggageType,
   FlexibilityType
@@ -243,12 +241,9 @@ const CreateRide: React.FC = () => {
     terminal: name.includes('Airport') ? terminal as RideLocation['terminal'] : null,
   });
 
-  const routeDeparture = React.useMemo(() => selectedTime === 'Now' ? undefined : getDepartureDate().toISOString(), [selectedDate, selectedTime]);
-  const routeInput = pickup.trim() && destination.trim() && (!(pickup.includes('Airport') || destination.includes('Airport')) || terminal)
-    ? { origin: rideLocation(pickup), destination: rideLocation(destination), departureTime: routeDeparture } : null;
-  const routing = useRoute(routeInput);
-  const fareCents = estimateRouteFare(routing.data);
-  const fareLabel = fareCents === null ? 'Unavailable' : '$' + (fareCents / 100).toFixed(2);
+  const mapsInput = pickup.trim() && destination.trim() ? { origin: rideLocation(pickup), destination: rideLocation(destination) } : null;
+  const fareCents: number | null = null;
+  const fareLabel = 'Available on Ride Detail';
 
   const handleCreateRide = async () => {
     if (submitting.current) return;
@@ -492,7 +487,7 @@ const CreateRide: React.FC = () => {
           </div>
         </fieldset>
 
-        {routeInput && <div className="max-w-lg w-full"><RouteInfo {...routing} mapsUrl={mapsRouteUrl(routeInput)} /><p className="text-xs text-neutral-500">Fare is an estimate, not a live Uber/Lyft quote; tolls and fees may vary.</p></div>}
+        {mapsInput && <div className="max-w-lg w-full text-xs text-neutral-500 my-3"><a className="underline" target="_blank" rel="noopener noreferrer" href={mapsRouteUrl(mapsInput)}>Check live route in Google Maps</a><p>Route and fare estimates are available on Ride Detail after creating a ride.</p></div>}
 
         {step === 'form' && (
           <div className="mt-8 sm:mt-12 max-w-lg w-full">

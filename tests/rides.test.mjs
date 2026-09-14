@@ -89,9 +89,9 @@ after(async () => {
 
 test('migrations work on an empty database and are repeatable', async () => {
   assert.equal(await count(), 0);
-  assert.deepEqual((await db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")).rows.map(r => r.table_name), ['messages', 'ride_participants', 'rides', 'schema_migrations', 'users']);
+  assert.deepEqual((await db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")).rows.map(r => r.table_name), ['messages', 'ride_participants', 'ride_route_snapshots', 'rides', 'schema_migrations', 'users']);
   await migrate();
-  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '5');
+  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '6');
   assert.equal((await db.query("SELECT full_name FROM users WHERE id='u1'")).rows[0].full_name, 'Baldwin Eagle');
 });
 test('POST creates a persisted ride and host participation with server identity and timestamps', async () => {
@@ -631,4 +631,20 @@ test('routing availability never blocks persistence: unknown fare is nullable an
   const persisted = await (await fetch(origin + '/api/rides/' + ride.id)).json();
   assert.equal(persisted.estimatedTotalCostCents, null);
   assert.equal(persisted.origin.name, 'Unresolved custom pickup');
+});
+
+
+test('snapshot endpoint is ride-specific, optional, and has no arbitrary-location API', async () => {
+  const host = await newActor(), ride = await newRide(host);
+  const request = data => fetch(origin + '/api/rides/' + ride.id + '/route-snapshot', {
+    method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+  });
+  assert.equal((await request({ origin: input.origin })).status, 400);
+  const first = await request({});
+  assert.equal(first.status, 200);
+  const snapshot = await first.json();
+  assert.equal(snapshot.data, null);
+  assert.equal(snapshot.latestRefreshFailed, true);
+  assert.deepEqual(await (await request({})).json(), snapshot);
+  assert.equal((await fetch(origin + '/api/routes', { method: 'POST' })).status, 404);
 });
