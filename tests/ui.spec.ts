@@ -520,14 +520,23 @@ test('chat synchronizes messages, reactions and deletion across participants and
     await host.getByRole('button',{name:'Send message'}).click();
     await expect(guest.getByText('Realtime browser hello',{exact:true})).toBeVisible();
     await expect(guest.getByRole('button',{name:'Delete',exact:true})).toHaveCount(0);
+    await guest.getByRole('button',{name:'Message: Realtime browser hello. Open message actions',exact:true}).click();
+    await expect(guest.getByRole('button',{name:'Delete message',exact:true})).toHaveCount(0);
     await guest.getByRole('button',{name:'React 👍',exact:true}).click();
-    await expect(host.getByRole('button',{name:'React 👍',exact:true})).toHaveText('👍 1');
+    await expect(host.getByRole('button',{name:'👍, 1 reactions',exact:true})).toHaveText('👍 1');
     await b.setOffline(true);
     await host.getByRole('textbox',{name:'Message',exact:true}).fill('Message during disconnect');
     await host.getByRole('button',{name:'Send message'}).click();
     await b.setOffline(false);
     await expect(guest.getByText('Message during disconnect',{exact:true})).toHaveCount(1);
-    await host.getByRole('button',{name:'Delete',exact:true}).first().click();
+    await host.getByRole('button',{name:'Message: Realtime browser hello. Open message actions',exact:true}).click();
+    await host.getByRole('button',{name:'Delete message',exact:true}).click();
+    await expect(host.getByRole('dialog',{name:'Delete message?'})).toBeVisible();
+    await host.getByRole('button',{name:'Cancel',exact:true}).click();
+    await expect(guest.getByText('Realtime browser hello',{exact:true})).toBeVisible();
+    await host.getByRole('button',{name:'Message: Realtime browser hello. Open message actions',exact:true}).click();
+    await host.getByRole('button',{name:'Delete message',exact:true}).click();
+    await host.getByRole('button',{name:'Delete',exact:true}).click();
     await expect(guest.getByText('Realtime browser hello',{exact:true})).toHaveCount(0);
     await expect(guest.getByRole('button',{name:'Refresh',exact:true})).toHaveCount(0);
   }finally{await Promise.allSettled([a.close(),b.close()]);}

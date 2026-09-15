@@ -91,7 +91,7 @@ test('migrations work on an empty database and are repeatable', async () => {
   assert.equal(await count(), 0);
   assert.deepEqual((await db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")).rows.map(r => r.table_name), ['message_reactions', 'messages', 'ride_participants', 'ride_route_snapshots', 'rides', 'schema_migrations', 'users']);
   await migrate();
-  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '8');
+  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '9');
   assert.equal((await db.query("SELECT full_name FROM users WHERE id='u1'")).rows[0].full_name, 'Baldwin Eagle');
 });
 test('POST creates a persisted ride and host participation with server identity and timestamps', async () => {
@@ -754,6 +754,8 @@ test('realtime chat events, idempotent sends, author deletion, and persisted rea
     const react=(who,method)=>who.client.request('/api/rides/'+ride.id+'/messages/'+messageId+'/reactions',{method,headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({emoji:'👍'})});
     assert.equal((await react(outsider,'PUT')).status,403);assert.equal((await react(guest,'PUT')).status,200);await next('event: changed');await react(guest,'PUT');
     history=await(await host.client.request('/api/rides/'+ride.id+'/messages')).json();assert.equal(history.messages[0].reactions.length,1);assert.ok(BigInt(history.revision)>BigInt(first.revision));
+    const changed=await guest.client.request('/api/rides/'+ride.id+'/messages/'+messageId+'/reactions',{method:'PUT',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({emoji:'😢'})});assert.equal(changed.status,200);await changed.arrayBuffer();await next('event: changed');
+    assert.deepEqual((await(await guest.client.request('/api/rides/'+ride.id+'/messages')).json()).messages[0].reactions,[{userId:guest.user.id,emoji:'😢'}]);
     const remove=who=>who.client.request('/api/rides/'+ride.id+'/messages/'+messageId,{method:'DELETE',headers:{Origin:origin}});
     assert.equal((await remove(guest)).status,403);assert.equal((await remove(host)).status,200);await next('event: changed');
     assert.equal((await(await guest.client.request('/api/rides/'+ride.id+'/messages')).json()).messages.length,0);
@@ -774,4 +776,40 @@ test('reactions survive restart, remove idempotently, and cancelled chat mutatio
   await operate(host,ride.id,'cancel');assert.equal((await react('PUT')).status,409);
   assert.equal((await host.client.request('/api/rides/'+ride.id+'/messages/'+id,{method:'DELETE',headers:{Origin:origin}})).status,409);
   assert.equal((await(await history(host,ride.id)).json()).messages.length,1);
+});
+
+test('reactions: one per user, replacement, removal, concurrent writes and direct database protection',async()=>{
+  const host=await newActor(),guest=await newActor(),ride=await newRide(host);await operate(guest,ride.id,'join');
+  const sent=await(await message(host,ride.id,{body:'Single reaction'})).json(),id=sent.messages[0].id;
+  const react=(who,emoji,method='PUT')=>who.client.request('/api/rides/'+ride.id+'/messages/'+id+'/reactions',{method,headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({emoji})});
+  assert.equal((await react(host,'❤️')).status,200);assert.equal((await react(guest,'❤️')).status,200);
+  let chat=await(await history(host,ride.id)).json();assert.equal(chat.messages[0].reactions.filter(r=>r.emoji==='❤️').length,2);
+  const revision=chat.revision;
+  assert.equal((await react(host,'😮')).status,200);
+  chat=await(await history(host,ride.id)).json();assert.ok(BigInt(chat.revision)>BigInt(revision));
+  assert.deepEqual(chat.messages[0].reactions.filter(r=>r.userId===host.user.id),[{userId:host.user.id,emoji:'😮'}]);
+  await react(host,'❤️','DELETE'); // A stale removal must not remove the new choice.
+  assert.equal((await(await history(host,ride.id)).json()).messages[0].reactions.length,2);
+  await react(host,'😮','DELETE');assert.equal((await(await history(host,ride.id)).json()).messages[0].reactions.length,1);
+  const results=await Promise.allSettled(['👍','😂','😢'].map(async emoji=>{const response=await react(host,emoji);await response.arrayBuffer();return response.status;}));
+  assert.ok(results.every(r=>r.status==='fulfilled' && r.value===200));
+  const rows=(await db.query('SELECT emoji FROM message_reactions WHERE message_id=$1 AND user_id=$2',[id,host.user.id])).rows;
+  assert.equal(rows.length,1);
+  await assert.rejects(db.query('INSERT INTO message_reactions(message_id,user_id,emoji) VALUES($1,$2,$3)',[id,host.user.id,'❤️']),error=>error.code==='23505');
+});
+
+test('reactions: migration safely consolidates legacy stacked reactions',async()=>{
+  const host=await newActor(),ride=await newRide(host);
+  const id=(await(await message(host,ride.id,{body:'Legacy reactions'})).json()).messages[0].id;
+  const client=await db.connect();
+  try{
+    await client.query('BEGIN');
+    await client.query('ALTER TABLE message_reactions DROP CONSTRAINT message_reactions_pkey');
+    await client.query('ALTER TABLE message_reactions ADD PRIMARY KEY(message_id,user_id,emoji)');
+    await client.query("INSERT INTO message_reactions(message_id,user_id,emoji) VALUES($1,$2,'❤️'),($1,$2,'👍')",[id,host.user.id]);
+    const {readFile}=await import('node:fs/promises');
+    await client.query(await readFile(new URL('../server/migrations/009_single_reaction.sql',import.meta.url),'utf8'));
+    assert.equal((await client.query('SELECT count(*) FROM message_reactions WHERE message_id=$1',[id])).rows[0].count,'1');
+    assert.equal((await client.query('SELECT count(*) FROM messages WHERE id=$1',[id])).rows[0].count,'1');
+  }finally{await client.query('ROLLBACK');client.release();}
 });

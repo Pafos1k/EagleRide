@@ -38,7 +38,7 @@ export function rideRoutes(requireUser: RequestHandler) {
   });
   for(const method of ['put','delete'] as const){
     router[method]('/:id/messages/:messageId/reactions',privateResponse,sameOrigin,requireUser,async(req,res)=>{
-      const body=z.object({emoji:z.enum(['👍','❤️','😂','🎉','👀'])}).strict().safeParse(req.body);
+      const body=z.object({emoji:z.enum(['👍','❤️','😂','🎉','👀','😮','😢'])}).strict().safeParse(req.body);
       if(!body.success || !z.uuid().safeParse(req.params.id).success || !/^[1-9][0-9]{0,17}$/.test(String(req.params.messageId)))return res.status(400).json({error:'Invalid reaction.'});
       res.json(await rideChat(pool!,String(req.params.id),res.locals.user.id,undefined,undefined,{id:String(req.params.messageId),emoji:body.data.emoji,remove:method==='delete'}));
     });

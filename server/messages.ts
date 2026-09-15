@@ -18,7 +18,7 @@ export async function rideChat(pool: Pool, rideId: string, userId: string, body?
       if(action.emoji){
         if(ride.cancelled_at)throw new RideOperationError(409,'This ride is cancelled. Chat is read-only.');
         if(action.remove)await client.query('DELETE FROM message_reactions WHERE message_id=$1 AND user_id=$2 AND emoji=$3',[action.id,userId,action.emoji]);
-        else await client.query('INSERT INTO message_reactions(message_id,user_id,emoji) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',[action.id,userId,action.emoji]);
+        else await client.query('INSERT INTO message_reactions(message_id,user_id,emoji) VALUES($1,$2,$3) ON CONFLICT (message_id,user_id) DO UPDATE SET emoji=EXCLUDED.emoji WHERE message_reactions.emoji IS DISTINCT FROM EXCLUDED.emoji',[action.id,userId,action.emoji]);
       }else{
         if(message.sender_user_id!==userId)throw new RideOperationError(403,'You can delete only your own messages.');
         await client.query('DELETE FROM messages WHERE id=$1',[action.id]);

@@ -543,5 +543,12 @@ stored in PostgreSQL and removed with their message.
 
 The Google G image is the official local asset from
 https://developers.google.com/static/identity/images/g-logo.png.
-Terms and Privacy remain explicitly labeled coming-soon placeholders; the Ride
-Detail disclaimer is product guidance, not a substitute for published policies.
+Ride Detail shows the coordination and time-critical transportation disclaimer;
+no placeholder legal links are displayed.
+
+Migration `009_single_reaction.sql` enforces one reaction per user/message and
+notifies existing SSE subscribers on replacements. Existing stacked reactions
+keep one deterministic emoji (the old schema has no timestamp to infer recency).
+Apply it with `npm run db:migrate` after building the updated checkout; no Supabase
+dashboard or storage changes are required. PUT sets/replaces a reaction and DELETE
+removes the specified active reaction; selecting the active emoji in the UI removes it.

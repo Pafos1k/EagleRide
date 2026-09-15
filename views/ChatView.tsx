@@ -102,7 +102,7 @@ const ChatView: React.FC = () => {
           <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 sm:p-4 text-center max-w-sm">
             <Info size={16} className="text-neutral-700 mx-auto mb-1.5 sm:mb-2" />
             <p className="text-xs text-slate-500 font-medium">
-              {chat.cancelledAt ? 'This ride is cancelled. Chat history is read-only.' : 'Coordinate your pickup here. Messages update automatically.'}
+              {chat.cancelledAt ? 'This ride is cancelled. Chat history is read-only.' : 'Coordinate your pickup here. Messages update automatically. Tap or hold a message for reactions and actions.'}
             </p>
           </div>
         </div>
