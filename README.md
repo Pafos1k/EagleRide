@@ -476,3 +476,32 @@ traffic. There is no persisted user-specific snapshot or browser-local authority
 Run npm run test:snapshots with TEST_DATABASE_URL for deterministic PostgreSQL
 milestone, concurrency and failure tests, plus the existing routing/server/database
 and browser suites. Apply migration 006 to the application database before use.
+
+### Profile presentation and discovery
+
+Apply migration `007_profile_presentation.sql` with `npm run build` followed by
+`npm run db:migrate` before starting this version. It adds nullable display-name
+and avatar-URL fields to PostgreSQL users; verified identity/email are unchanged.
+Profile edits use authenticated, same-origin `PATCH /api/auth/profile`.
+
+Avatars are uploaded from the device photo/file picker. Run `supabase/avatars.sql`
+in your Supabase project's SQL Editor once before using uploads. This creates the
+public `avatars` bucket with a 2 MB limit, PNG/JPEG/WebP MIME restrictions, and
+policies restricting INSERT/SELECT/UPDATE to the signed-in user's stable
+`<auth.uid()>/avatar` object. Check that no existing broader policies grant writes
+to other users' objects. Public avatar images are readable by anyone with the URL.
+
+Express accepts authenticated, same-origin `POST /api/auth/profile/avatar` binary
+image uploads, validates file signatures/type and size, and uses the current user's
+Supabase JWT (including the existing refresh flow), never a service-role key.
+The saved URL uses the existing `users.avatar_url` column and a cache-version query
+parameter; replacement overwrites the same object. No new PostgreSQL migration or
+environment key is needed. Apply migration 007 if you have not already done so.
+
+Profile Save uploads the photo before saving the display name. If the later name
+save fails, the photo may already have been replaced; retry Save to finish.
+Cancel before Save discards the preview without uploading. Unsupported formats
+(including HEIC/SVG) should be exported to PNG/JPEG/WebP first. Failed image loads
+fall back to initials. Chat reads current profile references in its existing query;
+there is no additional polling. Discovery excludes full, past, and cancelled rides
+without removing their history.

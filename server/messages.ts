@@ -16,7 +16,7 @@ export async function rideChat(pool: Pool, rideId: string, userId: string, body?
       await client.query('INSERT INTO messages(ride_id,sender_user_id,body) VALUES($1,$2,$3)', [rideId, userId, body]);
     }
     const result = await client.query(`SELECT m.id::text, m.ride_id AS "rideId", m.sender_user_id AS "senderUserId",
-      u.full_name AS "senderName", m.body, m.created_at AS "createdAt"
+      COALESCE(u.display_name,u.full_name) AS "senderName", u.avatar_url AS "senderAvatarUrl", m.body, m.created_at AS "createdAt"
       FROM messages m JOIN users u ON u.id=m.sender_user_id WHERE m.ride_id=$1 ORDER BY m.id`, [rideId]);
     await client.query('COMMIT');
     return { cancelledAt: ride.cancelled_at?.toISOString() ?? null,

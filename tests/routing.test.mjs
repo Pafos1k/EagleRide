@@ -104,9 +104,18 @@ test('route UI preserves failed-refresh data with timestamp and only shows unava
     distanceMeters:16093,durationSeconds:1200,trafficAwareDurationSeconds:1800,source:'google-routes',
     calculatedAt:'2026-09-01T12:00:00Z',departureTime:'2026-09-17T12:00:00Z',timing:'scheduled',
   }}));
-  assert.match(html,/10.0 mi · 30 min driving/);assert.match(html,/Baseline driving ETA: 20 min/);assert.match(html,/Latest refresh failed/);
-  assert.match(html,/not current\/live traffic/);assert.match(html,/Google Maps · Updated/);
-  assert.doesNotMatch(html,/Live route information is unavailable/);
+  assert.match(html,/Updated/);assert.match(html,/dateTime="2026-09-01T12:00:00Z"/);
+  assert.match(html,/Check live route/);assert.doesNotMatch(html,/mi ·|Baseline|snapshot|traffic|Latest refresh|Google Maps/);
   const empty=renderToStaticMarkup(createElement(RouteInfo,{loading:false,latestRefreshFailed:true,mapsUrl,data:null}));
-  assert.match(empty,/Live route information is unavailable/);
+  assert.match(empty,/Not updated/);assert.doesNotMatch(empty,/dateTime=/);
+
+});
+
+test('chat bubbles group consecutive senders and omit own repeated identity',async()=>{
+  const {createElement}=await import('react');const {renderToStaticMarkup}=await import('react-dom/server');
+  const {default:ChatMessages}=await import('../src/components/ChatMessages.tsx');
+  const messages=['other','other','me','me','other'].map((senderUserId,index)=>({id:String(index),rideId:'ride',senderUserId,senderName:senderUserId==='me'?'My name':'Alex',senderAvatarUrl:null,body:index===0?'Hi':'Long message '.repeat(20),createdAt:'2026-09-14T12:00:00Z'}));
+  const html=renderToStaticMarkup(createElement(ChatMessages,{messages,currentUserId:'me'}));
+  assert.equal((html.match(/Alex&#x27;s avatar/g)||[]).length,2);assert.doesNotMatch(html,/My name/);
+  assert.equal((html.match(/<time /g)||[]).length,5);assert.match(html,/max-w-\[65%\]/);assert.match(html,/bg-black text-white/);assert.match(html,/bg-neutral-100 text-neutral-900/);
 });

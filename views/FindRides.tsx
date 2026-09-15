@@ -28,7 +28,8 @@ const FindRides: React.FC = () => {
     setLoading(true);
     setError('');
     listRides(controller.signal).then(all => {
-      setRides(filterDestination === 'ALL' ? all : all.filter(r =>
+      const joinable = all.filter(r => !r.cancelledAt && Date.parse(r.departureTime) > Date.now() && r.seatsTaken < r.seatsTotal);
+      setRides(filterDestination === 'ALL' ? joinable : joinable.filter(r =>
         r.destination.name === filterDestination));
     }).catch(() => {
       if (!controller.signal.aborted) setError('Unable to load rides. Please try again.');

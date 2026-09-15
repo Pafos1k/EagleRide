@@ -59,15 +59,25 @@ test('ride creation is visible in a separate browser context without local ride 
     // Select the suggestion so its overlay no longer covers the terminal buttons.
     await pageA.getByText('Logan Airport (BOS)', { exact: true }).click();
     await pageA.getByRole('button', { name: 'C', exact: true }).click();
+    // Discovery only includes future departures, so request tomorrow rather than Now today.
+    const tomorrow = await pageA.evaluate(() => {
+      const today=new Date(), next=new Date(today); next.setDate(today.getDate()+1);
+      return {day:next.getDate(), nextMonth:next.getMonth()!==today.getMonth(), month:today.toLocaleString('default',{month:'long',year:'numeric'})};
+    });
+    await pageA.getByText('Today',{exact:true}).click();
+    if(tomorrow.nextMonth) await pageA.getByText(tomorrow.month,{exact:true}).locator('..').getByRole('button').last().click();
+    await pageA.getByText(String(tomorrow.day),{exact:true}).click();
     await pageA.getByRole('button', { name: 'Continue', exact: true }).click();
-    await expect(pageA.getByRole('heading', { name: /^(Similar rides found|Confirm your ride)$/ })).toBeVisible();
+    await expect(pageA.getByRole('heading', { name: 'Similar rides found' }).or(pageA.getByRole('button', {name:'Post Ride',exact:true}))).toBeVisible();
     if (await pageA.getByRole('heading', { name: 'Similar rides found' }).isVisible()) {
       await pageA.getByRole('button', { name: 'Create my own ride' }).click();
     }
-    await expect(pageA.getByRole('heading', { name: 'Confirm your ride' })).toBeVisible();
+    await expect(pageA.getByRole('button', { name: 'Post Ride', exact: true })).toBeVisible();
     await pageA.getByRole('button', { name: 'Post Ride', exact: true }).click();
     await expect(pageA).toHaveURL(/#\/ride\/[a-f0-9-]+$/);
     const id = pageA.url().split('/').at(-1)!;
+    const persisted = await (await pageA.request.get('/api/rides/'+id)).json();
+    expect(Date.parse(persisted.departureTime)).toBeGreaterThan(Date.now());
     await pageB.goto('/#/find');
     await expect(pageB.locator(`a[href="#/ride/${id}"]`)).toBeVisible();
     await pageB.locator(`a[href="#/ride/${id}"]`).click();
@@ -178,7 +188,7 @@ test('public Home, About, list and details stay public; create preserves its ret
     await page.goto('/#' + route);
     await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
   }
-  await expect(page.getByRole('link', { name: 'Check live route in Google Maps' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Check live route' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign in to join' })).toBeVisible();
   await page.getByRole('button', { name: 'Sign in to join' }).click();
   await expect(page).toHaveURL(/signin\?returnTo=/);
@@ -322,15 +332,21 @@ test('routing unavailable does not block ride creation and never displays fabric
   await page.getByPlaceholder('Dropoff location').fill('Unique custom destination');
   await page.getByRole('heading', { name: 'Request a ride', exact: true }).click();
   await expect(page.getByText(/Estimated fare|Available on Ride Detail|Split 4 ways/)).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Check live route in Google Maps' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Check live route' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Confirm your ride' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Post Ride', exact: true })).toBeVisible();
+  await expect(page.getByText('Confirm your ride',{exact:true})).toHaveCount(0);
+  await expect(page.getByPlaceholder('Pickup location')).toHaveValue('Unique custom pickup');
+  await expect(page.getByPlaceholder('Dropoff location')).toHaveValue('Unique custom destination');
+  await page.getByRole('button',{name:'Edit details',exact:true}).click();
+  await expect(page.getByPlaceholder('Pickup location')).toHaveValue('Unique custom pickup');
+  await page.getByRole('button',{name:'Continue',exact:true}).click();
   const saved = page.waitForResponse(response => response.url().endsWith('/api/rides') && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Post Ride', exact: true }).click();
   const response = await saved;
   expect(response.status()).toBe(201);
   expect((await response.json()).estimatedTotalCostCents).toBeNull();
-  await expect(page.getByText('Live route information is unavailable.', { exact: true })).toBeVisible();
+  await expect(page.getByText(/^Not updated/)).toBeVisible();
   await expect(page.getByText(/55[–-]70/)).toHaveCount(0);
 });
 test('route display uses provider distance and marks fallback duration without live traffic claims', async ({ page }) => {
@@ -341,8 +357,8 @@ test('route display uses provider distance and marks fallback duration without l
     calculatedAt: new Date().toISOString(), departureTime: new Date().toISOString(), timing: 'current',
   }}) }));
   await page.goto('/#/ride/' + ride.id);
-  await expect(page.getByText('10.0 mi · 20 min driving', { exact: true })).toBeVisible();
-  await expect(page.getByText(/Driving estimate · traffic unavailable/)).toBeVisible();
+  await expect(page.getByText(/Updated/)).toBeVisible();
+  await expect(page.getByText(/mi ·|Baseline driving/)).toHaveCount(0);
   await expect(page.getByText(/Traffic-aware driving estimate/)).toHaveCount(0);
 });
 
@@ -357,8 +373,8 @@ test('Create, Find and Activity never request routing; confirmation has no route
   await page.getByPlaceholder('Dropoff location').fill('No routing destination');
   await page.getByRole('heading', {name:'Request a ride',exact:true}).click();
   await page.getByRole('button', {name:'Continue',exact:true}).click();
-  await expect(page.getByRole('heading', {name:'Confirm your ride'})).toBeVisible();
-  await expect(page.getByRole('link',{name:'Check live route in Google Maps'})).toHaveCount(0);
+  await expect(page.getByRole('button', {name:'Post Ride',exact:true})).toBeVisible();
+  await expect(page.getByRole('link',{name:'Check live route'})).toHaveCount(0);
   await expect(page.getByText(/Estimated fare|Available on Ride Detail|Split 4 ways/)).toHaveCount(0);
   for(const route of ['/find','/dashboard']){
     await page.goto('/#'+route);
@@ -374,9 +390,104 @@ test('failed snapshot refresh displays the previous data, fixed fare and timesta
     estimatedFareCents:2400,lastAttemptAt:new Date().toISOString(),latestRefreshFailed:true,
   })}));
   await page.goto('/#/ride/'+ride.id);
-  await expect(page.getByText('10.0 mi · 30 min driving',{exact:true})).toBeVisible();
+  await expect(page.locator('time[datetime="2026-09-01T12:00:00Z"]')).toBeVisible();
   await expect(page.getByText('Total $24.00',{exact:true})).toBeVisible();
-  await expect(page.getByText(/Latest refresh failed/)).toBeVisible();
-  await expect(page.getByText(/Google Maps · Updated/)).toBeVisible();
-  await expect(page.getByText('Live route information is unavailable.',{exact:true})).toHaveCount(0);
+  await expect(page.getByText(/Updated/)).toBeVisible();
+  await expect(page.getByText(/snapshot|Baseline driving|Stored traffic/)).toHaveCount(0);
+  await expect(page.getByText(/^Not updated/)).toHaveCount(0);
+});
+
+test('request hero centers responsive controls and keeps confidence below the fold', async ({ page }) => {
+  for (const viewport of [{width:1440,height:900},{width:390,height:844}]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/');
+    await expect(page.getByRole('heading',{name:'Request a ride',exact:true})).toBeVisible();
+    const pickup=await page.getByPlaceholder('Pickup location').boundingBox();
+    const dropoff=await page.getByPlaceholder('Dropoff location').boundingBox();
+    const proceed=await page.getByRole('button',{name:'Continue',exact:true}).boundingBox();
+    const date=await page.getByText('Today',{exact:true}).locator('..').boundingBox();
+    const time=await page.getByText('Now',{exact:true}).locator('..').boundingBox();
+    expect(Math.abs(date!.y-time!.y)).toBeLessThan(5);
+    expect(Math.abs(date!.width-time!.width)).toBeLessThan(2);
+    expect(date!.height).toBe(viewport.width < 768 ? 52 : 44);
+    await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();
+    await expect(page.getByRole('button',{name:'Continue',exact:true})).toHaveCSS('color','rgb(255, 255, 255)');
+    await expect(page.getByRole('button',{name:'Continue',exact:true})).toHaveCSS('background-color','rgb(0, 0, 0)');
+    const confidence=await page.getByText('Ride with confidence',{exact:true}).boundingBox();
+    expect(pickup).not.toBeNull();expect(dropoff).not.toBeNull();expect(proceed).not.toBeNull();
+    expect(confidence!.y).toBeGreaterThanOrEqual(viewport.height);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    if(viewport.width>768){
+      expect(Math.abs(pickup!.y-dropoff!.y)).toBeLessThan(5);
+      expect(proceed!.x).toBeGreaterThan(dropoff!.x);
+    }else{
+      expect(dropoff!.y).toBeGreaterThan(pickup!.y);
+      expect(date!.y).toBeGreaterThan(dropoff!.y);
+      expect(proceed!.y).toBeGreaterThan(date!.y+date!.height);
+      expect(proceed!.width).toBeGreaterThan(viewport.width-60);
+    }
+    await expect(page.getByRole('link',{name:'Check live route'})).toHaveCount(0);
+  }
+});
+
+test('profile edits persist and chat shows sender display name and avatar',async({page})=>{
+  await signIn(page);
+  await page.getByRole('button',{name:'Edit profile',exact:true}).click();
+  await page.getByLabel('Display name',{exact:true}).fill('Alice Rider');
+  await expect(page.getByLabel('Avatar image URL',{exact:true})).toHaveCount(0);
+  await page.getByLabel('Choose profile photo',{exact:true}).setInputFiles({name:'avatar.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64')});
+  await page.getByRole('button',{name:'Save',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Alice Rider',exact:true})).toBeVisible();
+  await page.reload();await expect(page.getByRole('heading',{name:'Alice Rider',exact:true})).toBeVisible();
+  const ride=await createFutureRide(page);await page.goto('/#/chat/'+ride.id);
+  await page.getByRole('textbox',{name:'Message',exact:true}).fill('Profile identity message');
+  await page.getByRole('button',{name:'Send message',exact:true}).click();
+  await expect(page.getByText('Alice Rider',{exact:true})).toHaveCount(0);
+  await expect(page.getByText('Profile identity message',{exact:true})).toBeVisible();
+  await page.goto('/#/profile');await page.getByRole('button',{name:'Edit profile',exact:true}).click();
+  await page.getByLabel('Display name',{exact:true}).fill('Alice Eagle');
+  await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.getByRole('heading',{name:'Alice Eagle',exact:true})).toBeVisible();
+});
+
+test('profile card and actions remain centered and compact on desktop and mobile',async({page})=>{
+  await signIn(page);
+  for(const viewport of [{width:1440,height:900},{width:390,height:844}]){
+    await page.setViewportSize(viewport);
+    const edit=page.getByRole('button',{name:'Edit profile',exact:true});
+    const out=page.getByRole('button',{name:'Sign Out',exact:true});
+    const heading=page.getByRole('heading',{name:'Alice Eagle',exact:true});
+    const card=edit.locator('xpath=ancestor::form/..');
+    const box=await card.boundingBox(),editBox=await edit.boundingBox(),outBox=await out.boundingBox();
+    expect(box!.width).toBeLessThanOrEqual(540);
+    expect(Math.abs(box!.x+box!.width/2-viewport.width/2)).toBeLessThan(2);
+    expect(Math.abs(editBox!.width-outBox!.width)).toBeLessThan(2);
+    expect(outBox!.y).toBeGreaterThan(editBox!.y);
+    await expect(heading.locator('..')).toHaveCSS('text-align','center');
+    await expect(edit).toHaveCSS('background-color','rgb(0, 0, 0)');
+    await edit.click();
+    await expect(page.getByRole('button',{name:'Change photo',exact:true})).toBeVisible();
+    await expect(out).toHaveCount(0);
+    const saveBox=await page.getByRole('button',{name:'Save',exact:true}).boundingBox();
+    const cancelBox=await page.getByRole('button',{name:'Cancel',exact:true}).boundingBox();
+    expect(Math.abs(saveBox!.width-cancelBox!.width)).toBeLessThan(2);
+    expect(Math.abs(saveBox!.y-cancelBox!.y)).toBeLessThan(2);
+    await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Alice Eagle');
+    await page.getByRole('button',{name:'Cancel',exact:true}).click();
+    await expect(edit).toBeVisible();
+  }
+});
+
+test('sign in centers BC requirement and preserves anonymous browsing on both viewports',async({page})=>{
+  for(const viewport of [{width:1440,height:900},{width:390,height:844}]){
+    await page.setViewportSize(viewport);await page.goto('/#/signin?returnTo=%2Fcreate');
+    const heading=page.getByRole('heading',{name:'Sign in to EagleRide',exact:true});
+    await expect(page.getByText('Boston College email required',{exact:true})).toBeVisible();
+    await expect(page.locator('strong').filter({hasText:'@bc.edu'})).toHaveCSS('font-weight','700');
+    const box=await heading.locator('..').boundingBox();
+    expect(Math.abs(box!.x+box!.width/2-viewport.width/2)).toBeLessThan(2);
+    expect(Math.abs(box!.y+box!.height/2-(80+(viewport.height-80)/2))).toBeLessThan(3);
+    await expect(page.getByRole('button',{name:'Continue with Google',exact:true})).toBeVisible();
+    await page.getByRole('link',{name:'Browse rides without signing in',exact:true}).click();
+    await expect(page).toHaveURL(/#\/find$/);
+  }
 });
