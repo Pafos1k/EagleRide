@@ -438,3 +438,26 @@ test('profile edits persist and chat shows sender display name and avatar',async
   await page.getByLabel('Display name',{exact:true}).fill('Alice Eagle');
   await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.getByRole('heading',{name:'Alice Eagle',exact:true})).toBeVisible();
 });
+
+test('profile card and actions remain centered and compact on desktop and mobile',async({page})=>{
+  await signIn(page);
+  for(const viewport of [{width:1440,height:900},{width:390,height:844}]){
+    await page.setViewportSize(viewport);
+    const edit=page.getByRole('button',{name:'Edit profile',exact:true});
+    const out=page.getByRole('button',{name:'Sign Out',exact:true});
+    const heading=page.getByRole('heading',{name:'Alice Eagle',exact:true});
+    const card=edit.locator('xpath=ancestor::form/..');
+    const box=await card.boundingBox(),editBox=await edit.boundingBox(),outBox=await out.boundingBox();
+    expect(box!.width).toBeLessThanOrEqual(540);
+    expect(Math.abs(box!.x+box!.width/2-viewport.width/2)).toBeLessThan(2);
+    expect(Math.abs(editBox!.width-outBox!.width)).toBeLessThan(2);
+    expect(outBox!.y).toBeGreaterThan(editBox!.y);
+    await expect(heading.locator('..')).toHaveCSS('text-align','center');
+    await expect(edit).toHaveCSS('background-color','rgb(0, 0, 0)');
+    await edit.click();
+    await expect(page.getByRole('button',{name:'Change photo',exact:true})).toBeVisible();
+    await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Alice Eagle');
+    await page.getByRole('button',{name:'Cancel',exact:true}).click();
+    await expect(edit).toBeVisible();
+  }
+});

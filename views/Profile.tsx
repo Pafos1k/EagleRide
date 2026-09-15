@@ -21,9 +21,9 @@ export default function Profile() {
     return () => URL.revokeObjectURL(url);
   }, [photo]);
   if (!user) return null;
-  return <div className="max-w-4xl mx-auto px-4 py-8">
+  return <div className="max-w-[540px] mx-auto px-4 py-8 sm:py-12">
     <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm">
-      <form className="flex flex-col sm:flex-row items-center gap-6" onSubmit={async event => {
+      <form className="flex flex-col items-center gap-5" onSubmit={async event => {
         event.preventDefault(); if(busy || !editing) return;
         const parsed = profileInput.safeParse({fullName:name});
         if(!parsed.success) { setError('Enter a plain-text display name of 1–80 characters.'); return; }
@@ -40,7 +40,7 @@ export default function Profile() {
         finally { setBusy(false); }
       }}>
         <div className="flex flex-col items-center gap-3">
-          <UserAvatar name={user.fullName} url={preview ?? user.avatarUrl} className="w-24 h-24 text-3xl" />
+          <UserAvatar name={user.fullName} url={preview ?? user.avatarUrl} className="w-32 h-32 sm:w-36 sm:h-36 text-4xl" />
           {editing && <>
             <input ref={picker} type="file" accept="image/png,image/jpeg,image/webp" aria-label="Choose profile photo" className="hidden" disabled={busy} onChange={event=>{
               const file=event.target.files?.[0]; event.target.value=''; if(!file) return;
@@ -50,20 +50,20 @@ export default function Profile() {
             <button type="button" disabled={busy} className="underline text-sm" onClick={()=>picker.current?.click()}>Change photo</button>
           </>}
         </div>
-        <div className="flex-1 min-w-0 text-center sm:text-left space-y-3 w-full">
-          {editing ? <label className="block text-sm">Display name<input disabled={busy} className="block w-full border rounded-lg p-2 mt-1" required maxLength={80} value={name} onChange={event=>setName(event.target.value)} /></label> : <h1 className="text-3xl font-black text-slate-900 break-words">{user.fullName}</h1>}
+        <div className="flex-1 min-w-0 text-center space-y-3 w-full">
+          {editing ? <label className="block text-sm">Display name<input disabled={busy} className="block w-full border rounded-lg p-2 mt-1 text-center" required maxLength={80} value={name} onChange={event=>setName(event.target.value)} /></label> : <h1 className="text-3xl font-black text-slate-900 break-words">{user.fullName}</h1>}
           <p className="text-slate-500 break-all"><Mail className="inline mr-2" size={16} />{user.bcEmail}</p>
           <p className="text-emerald-700 text-sm"><ShieldCheck className="inline mr-2" size={16} />Verified BC email</p>
           <p className="text-xs text-slate-500">Email ownership does not verify current student enrollment.</p>
           {error && <p role="alert">{error}</p>}
-          {editing ? <div className="flex gap-3 justify-center sm:justify-start">
+          {editing ? <div className="flex gap-3 justify-center">
             <button disabled={busy} className="bg-black text-white rounded-lg px-5 py-2">{busy ? 'Saving...' : 'Save'}</button>
             <button type="button" disabled={busy} className="px-4 py-2 underline" onClick={()=>{setEditing(false);setPhoto(null);setError('');}}>Cancel</button>
-          </div> : <button type="button" className="bg-black text-white rounded-lg px-5 py-2" onClick={()=>{setName(user.fullName);setPhoto(null);setError('');setEditing(true);}}>Edit profile</button>}
+          </div> : <button type="button" className="w-full bg-black text-white rounded-xl px-5 py-3 !mt-5" onClick={()=>{setName(user.fullName);setPhoto(null);setError('');setEditing(true);}}>Edit profile</button>}
         </div>
       </form>
-      <div className="mt-6 pt-5 border-t border-neutral-100">
-        <button disabled={busy} className="flex items-center gap-2 px-4 py-2 rounded-xl text-neutral-700 bg-slate-50 font-bold" onClick={async()=>{
+      <div className="mt-3">
+        <button disabled={busy} className="flex w-full items-center justify-center gap-2 px-4 py-3 border border-slate-200 rounded-xl text-neutral-700 bg-slate-50 font-bold" onClick={async()=>{
           setBusy(true);try{await signOut();}catch{}finally{setBusy(false);navigate('/signin');}
         }}><LogOut size={18} />Sign Out</button>
       </div>
