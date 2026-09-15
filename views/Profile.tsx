@@ -1,6 +1,6 @@
 import UserAvatar from '../src/components/UserAvatar';
 import React, { useEffect, useRef, useState } from 'react';
-import { Mail, LogOut, ShieldCheck } from 'lucide-react';
+import { Camera, Mail, LogOut, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../src/auth/AuthProvider';
 import { profileInput } from '../shared/profile';
@@ -47,7 +47,7 @@ export default function Profile() {
               if(!['image/png','image/jpeg','image/webp'].includes(file.type) || file.size>2*1024*1024 || !file.size) { setError('Choose a PNG, JPEG, or WebP image up to 2 MB.'); return; }
               setError(''); setPhoto(file);
             }} />
-            <button type="button" disabled={busy} className="underline text-sm" onClick={()=>picker.current?.click()}>Change photo</button>
+            <button type="button" disabled={busy} className="inline-flex items-center justify-center gap-2 border border-slate-200 bg-slate-50 rounded-xl px-4 py-2 text-sm font-semibold" onClick={()=>picker.current?.click()}><Camera size={18} />Change photo</button>
           </>}
         </div>
         <div className="flex-1 min-w-0 text-center space-y-3 w-full">
@@ -56,17 +56,17 @@ export default function Profile() {
           <p className="text-emerald-700 text-sm"><ShieldCheck className="inline mr-2" size={16} />Verified BC email</p>
           <p className="text-xs text-slate-500">Email ownership does not verify current student enrollment.</p>
           {error && <p role="alert">{error}</p>}
-          {editing ? <div className="flex gap-3 justify-center">
-            <button disabled={busy} className="bg-black text-white rounded-lg px-5 py-2">{busy ? 'Saving...' : 'Save'}</button>
-            <button type="button" disabled={busy} className="px-4 py-2 underline" onClick={()=>{setEditing(false);setPhoto(null);setError('');}}>Cancel</button>
+          {editing ? <div className="grid grid-cols-2 gap-3 !mt-5">
+            <button disabled={busy} className="w-full bg-black text-white rounded-xl px-4 py-3 font-semibold">{busy ? 'Saving...' : 'Save'}</button>
+            <button type="button" disabled={busy} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 font-semibold" onClick={()=>{setEditing(false);setPhoto(null);setError('');}}>Cancel</button>
           </div> : <button type="button" className="w-full bg-black text-white rounded-xl px-5 py-3 !mt-5" onClick={()=>{setName(user.fullName);setPhoto(null);setError('');setEditing(true);}}>Edit profile</button>}
         </div>
       </form>
-      <div className="mt-3">
+      {!editing && <div className="mt-3">
         <button disabled={busy} className="flex w-full items-center justify-center gap-2 px-4 py-3 border border-slate-200 rounded-xl text-neutral-700 bg-slate-50 font-bold" onClick={async()=>{
           setBusy(true);try{await signOut();}catch{}finally{setBusy(false);navigate('/signin');}
         }}><LogOut size={18} />Sign Out</button>
-      </div>
+      </div>}
     </div>
   </div>;
 }

@@ -59,6 +59,14 @@ test('ride creation is visible in a separate browser context without local ride 
     // Select the suggestion so its overlay no longer covers the terminal buttons.
     await pageA.getByText('Logan Airport (BOS)', { exact: true }).click();
     await pageA.getByRole('button', { name: 'C', exact: true }).click();
+    // Discovery only includes future departures, so request tomorrow rather than Now today.
+    const tomorrow = await pageA.evaluate(() => {
+      const today=new Date(), next=new Date(today); next.setDate(today.getDate()+1);
+      return {day:next.getDate(), nextMonth:next.getMonth()!==today.getMonth(), month:today.toLocaleString('default',{month:'long',year:'numeric'})};
+    });
+    await pageA.getByText('Today',{exact:true}).click();
+    if(tomorrow.nextMonth) await pageA.getByText(tomorrow.month,{exact:true}).locator('..').getByRole('button').last().click();
+    await pageA.getByText(String(tomorrow.day),{exact:true}).click();
     await pageA.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(pageA.getByRole('heading', { name: 'Similar rides found' }).or(pageA.getByRole('button', {name:'Post Ride',exact:true}))).toBeVisible();
     if (await pageA.getByRole('heading', { name: 'Similar rides found' }).isVisible()) {
@@ -68,6 +76,8 @@ test('ride creation is visible in a separate browser context without local ride 
     await pageA.getByRole('button', { name: 'Post Ride', exact: true }).click();
     await expect(pageA).toHaveURL(/#\/ride\/[a-f0-9-]+$/);
     const id = pageA.url().split('/').at(-1)!;
+    const persisted = await (await pageA.request.get('/api/rides/'+id)).json();
+    expect(Date.parse(persisted.departureTime)).toBeGreaterThan(Date.now());
     await pageB.goto('/#/find');
     await expect(pageB.locator(`a[href="#/ride/${id}"]`)).toBeVisible();
     await pageB.locator(`a[href="#/ride/${id}"]`).click();
@@ -456,8 +466,28 @@ test('profile card and actions remain centered and compact on desktop and mobile
     await expect(edit).toHaveCSS('background-color','rgb(0, 0, 0)');
     await edit.click();
     await expect(page.getByRole('button',{name:'Change photo',exact:true})).toBeVisible();
+    await expect(out).toHaveCount(0);
+    const saveBox=await page.getByRole('button',{name:'Save',exact:true}).boundingBox();
+    const cancelBox=await page.getByRole('button',{name:'Cancel',exact:true}).boundingBox();
+    expect(Math.abs(saveBox!.width-cancelBox!.width)).toBeLessThan(2);
+    expect(Math.abs(saveBox!.y-cancelBox!.y)).toBeLessThan(2);
     await expect(page.getByLabel('Display name',{exact:true})).toHaveValue('Alice Eagle');
     await page.getByRole('button',{name:'Cancel',exact:true}).click();
     await expect(edit).toBeVisible();
+  }
+});
+
+test('sign in centers BC requirement and preserves anonymous browsing on both viewports',async({page})=>{
+  for(const viewport of [{width:1440,height:900},{width:390,height:844}]){
+    await page.setViewportSize(viewport);await page.goto('/#/signin?returnTo=%2Fcreate');
+    const heading=page.getByRole('heading',{name:'Sign in to EagleRide',exact:true});
+    await expect(page.getByText('Boston College email required',{exact:true})).toBeVisible();
+    await expect(page.locator('strong').filter({hasText:'@bc.edu'})).toHaveCSS('font-weight','700');
+    const box=await heading.locator('..').boundingBox();
+    expect(Math.abs(box!.x+box!.width/2-viewport.width/2)).toBeLessThan(2);
+    expect(Math.abs(box!.y+box!.height/2-(80+(viewport.height-80)/2))).toBeLessThan(3);
+    await expect(page.getByRole('button',{name:'Continue with Google',exact:true})).toBeVisible();
+    await page.getByRole('link',{name:'Browse rides without signing in',exact:true}).click();
+    await expect(page).toHaveURL(/#\/find$/);
   }
 });
