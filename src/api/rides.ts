@@ -10,7 +10,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   }
   return response.json();
 }
-export const listRides = (signal?: AbortSignal) => request<PersistedRide[]>('/api/rides', { signal });
+export const listRides = (signal?: AbortSignal, search: Record<string,string> = {}) => request<PersistedRide[]>('/api/rides' + (Object.keys(search).length ? '?' + new URLSearchParams(search) : ''), { signal });
 export const getRide = (id: string, signal?: AbortSignal) => request<PersistedRide>(`/api/rides/${encodeURIComponent(id)}`, { signal });
 export const createRide = (input: CreateRideInput) => request<PersistedRide>('/api/rides', {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
@@ -22,5 +22,8 @@ export const operateRide = (id: string, operation: 'join' | 'leave' | 'cancel') 
 
 export const getChat = (id: string, signal?: AbortSignal) => request<import('../../shared/messages').RideChat>(
   '/api/rides/' + encodeURIComponent(id) + '/messages', { signal, cache: 'no-store' });
-export const sendMessage = (id: string, body: string) => request<import('../../shared/messages').RideChat>(
-  '/api/rides/' + encodeURIComponent(id) + '/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body }) });
+export const sendMessage = (id: string, body: string, clientMessageId?: string) => request<import('../../shared/messages').RideChat>(
+  '/api/rides/' + encodeURIComponent(id) + '/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body, clientMessageId }) });
+
+export const deleteMessage=(rideId:string,id:string)=>request<import('../../shared/messages').RideChat>(`/api/rides/${rideId}/messages/${id}`,{method:'DELETE'});
+export const reactMessage=(rideId:string,id:string,emoji:string,remove:boolean)=>request<import('../../shared/messages').RideChat>(`/api/rides/${rideId}/messages/${id}/reactions`,{method:remove?'DELETE':'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({emoji})});

@@ -78,7 +78,7 @@ const App: React.FC = () => {
                 isRequestRide ? 'bg-white text-black font-bold shadow-sm' : 'text-neutral-300 hover:text-white hover:bg-neutral-900'
               }`}
             >
-              Request a ride
+              Plan a ride
             </Link>
             <Link 
               to="/find" 
@@ -171,7 +171,7 @@ const App: React.FC = () => {
                   }`}
                 >
                   <Car size={19} className={`mr-3.5 ${isRequestRide ? 'text-black' : 'text-neutral-400'}`} />
-                  <span>Request a ride</span>
+                  <span>Plan a ride</span>
                 </Link>
 
                 <Link

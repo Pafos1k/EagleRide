@@ -1,3 +1,5 @@
+import {chatEvents} from './chatEvents';
+import {rideSearchSchema} from '../shared/rideSearch';
 import { createRoutingService, routingQuota } from './routing';
 import { rideRouteSnapshot } from './routeSnapshots';
 import { rideChat } from './messages';
@@ -28,17 +30,32 @@ export function rideRoutes(requireUser: RequestHandler) {
       return lookup(input);
     }));
   });
-  router.get('/', async (_req, res) => res.json(await listRides(pool!)));
+  router.get('/', async (req, res) => { const search=rideSearchSchema.safeParse(req.query); if(!search.success)return res.status(400).json({error:'Invalid ride search.'}); res.json(await listRides(pool!,search.data)); });
   router.get('/mine', privateResponse, requireUser, async (_req, res) => res.json(await userRides(pool!, res.locals.user.id)));
+  router.get('/:id/events',privateResponse,requireUser,async(req,res)=>{
+    if(!z.uuid().safeParse(req.params.id).success)return res.status(404).end();
+    await chatEvents(pool!,req,res,res.locals.user.id,String(req.params.id));
+  });
+  for(const method of ['put','delete'] as const){
+    router[method]('/:id/messages/:messageId/reactions',privateResponse,sameOrigin,requireUser,async(req,res)=>{
+      const body=z.object({emoji:z.enum(['👍','❤️','😂','🎉','👀'])}).strict().safeParse(req.body);
+      if(!body.success || !z.uuid().safeParse(req.params.id).success || !/^[1-9][0-9]{0,17}$/.test(String(req.params.messageId)))return res.status(400).json({error:'Invalid reaction.'});
+      res.json(await rideChat(pool!,String(req.params.id),res.locals.user.id,undefined,undefined,{id:String(req.params.messageId),emoji:body.data.emoji,remove:method==='delete'}));
+    });
+  }
+  router.delete('/:id/messages/:messageId',privateResponse,sameOrigin,requireUser,async(req,res)=>{
+    if(!z.uuid().safeParse(req.params.id).success || !/^[1-9][0-9]{0,17}$/.test(String(req.params.messageId)))return res.status(400).json({error:'Invalid message.'});
+    res.json(await rideChat(pool!,String(req.params.id),res.locals.user.id,undefined,undefined,{id:String(req.params.messageId)}));
+  });
   router.get('/:id/messages', privateResponse, requireUser, async (req, res) => {
     if (!z.uuid().safeParse(req.params.id).success) return res.status(404).json({ error: 'Ride not found.' });
     res.json(await rideChat(pool!, String(req.params.id), res.locals.user.id));
   });
   router.post('/:id/messages', privateResponse, sameOrigin, requireUser, async (req, res) => {
     if (!z.uuid().safeParse(req.params.id).success) return res.status(404).json({ error: 'Ride not found.' });
-    const input = z.object({ body: z.string().trim().min(1).max(2000) }).strict().safeParse(req.body);
+    const input = z.object({ body: z.string().trim().min(1).max(2000), clientMessageId:z.uuid().optional() }).strict().safeParse(req.body);
     if (!input.success) return res.status(400).json({ error: 'Message must contain 1–2000 characters and no other fields.' });
-    res.status(201).json(await rideChat(pool!, String(req.params.id), res.locals.user.id, input.data.body));
+    res.status(201).json(await rideChat(pool!, String(req.params.id), res.locals.user.id, input.data.body,input.data.clientMessageId));
   });
   router.get('/:id', async (req, res) => {
     if (typeof req.params.id !== 'string' || !z.uuid().safeParse(req.params.id).success) return res.status(404).json({ error: 'Ride not found.' });

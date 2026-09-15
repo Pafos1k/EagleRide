@@ -9,6 +9,7 @@ export const locationSchema = z.object({
 export const createRideSchema = z.object({
   origin: locationSchema,
   destination: locationSchema,
+  departureMode: z.enum(['scheduled','now']).optional(),
   departureTime: z.iso.datetime({ offset: true }).refine(value => Number.isFinite(Date.parse(value)), 'Invalid departure time'),
   seatsTotal: z.number().int().min(1).max(4),
   luggageType: z.enum(['CARRY_ON_ONLY', 'ONE_SUITCASE', 'MULTIPLE']),

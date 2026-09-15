@@ -89,9 +89,9 @@ after(async () => {
 
 test('migrations work on an empty database and are repeatable', async () => {
   assert.equal(await count(), 0);
-  assert.deepEqual((await db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")).rows.map(r => r.table_name), ['messages', 'ride_participants', 'ride_route_snapshots', 'rides', 'schema_migrations', 'users']);
+  assert.deepEqual((await db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")).rows.map(r => r.table_name), ['message_reactions', 'messages', 'ride_participants', 'ride_route_snapshots', 'rides', 'schema_migrations', 'users']);
   await migrate();
-  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '7');
+  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '8');
   assert.equal((await db.query("SELECT full_name FROM users WHERE id='u1'")).rows[0].full_name, 'Baldwin Eagle');
 });
 test('POST creates a persisted ride and host participation with server identity and timestamps', async () => {
@@ -593,13 +593,15 @@ test('chat: cancellation preserves history for members but prevents all new mess
   assert.equal((await db.query('SELECT count(*) FROM messages WHERE ride_id=$1', [ride.id])).rows[0].count, '1');
 });
 test('chat: a message waiting behind cancellation is rejected after the lock is released', async () => {
-  const host = await newActor(), ride = await newRide(host), locker = await db.connect();
+  const host = await newActor(), guest = await newActor(), ride = await newRide(host);
+  await operate(guest, ride.id, 'join');
+  const locker = await db.connect();
   let pending = Promise.resolve([]);
   try {
     await locker.query('BEGIN');
     await locker.query('UPDATE rides SET cancelled_at=clock_timestamp() WHERE id=$1', [ride.id]);
     pending = Promise.allSettled([(async () => {
-      const response = await message(host, ride.id, { body: 'Racing cancellation' });
+      const response = await message(guest, ride.id, { body: 'Racing cancellation' });
       await response.arrayBuffer();
       return response.status;
     })()]);
@@ -707,4 +709,69 @@ test('avatar uploads use authenticated stable owner paths, reject invalid files 
   const ride=await newRide(owner);await operate(other,ride.id,'join');
   await owner.client.request('/api/rides/'+ride.id+'/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:'Photo identity'})});
   const chat=await (await other.client.request('/api/rides/'+ride.id+'/messages')).json();assert.equal(chat.messages[0].senderAvatarUrl,previous.avatarUrl);
+});
+
+test('Now rides get a server-owned ten-minute grace window; expired rides stay out of discovery and joining',async()=>{
+  const host=await newActor(),guest=await newActor();
+  const now=await newRide(host,{departureMode:'now',departureTime:'2000-01-01T00:00:00Z'});
+  const remaining=Date.parse(now.departureTime)-Date.now();assert.ok(remaining>590000 && remaining<=600000);
+  assert.equal(now.departureMode,'now');
+  assert.ok((await (await fetch(origin+'/api/rides')).json()).some(r=>r.id===now.id));
+  assert.equal((await operate(guest,now.id,'join')).status,200);
+  assert.equal((await (await host.client.request('/api/rides/mine')).json()).find(r=>r.id===now.id).category,'upcoming');
+  await db.query("UPDATE rides SET departure_at=clock_timestamp()-interval '1 second' WHERE id=$1",[now.id]);
+  assert.ok(!(await (await fetch(origin+'/api/rides')).json()).some(r=>r.id===now.id));
+  const late=await newActor();assert.equal((await operate(late,now.id,'join')).status,409);
+  assert.equal((await (await host.client.request('/api/rides/mine')).json()).find(r=>r.id===now.id).category,'past');
+  const scheduled=await newRide(host,{departureTime:'2000-01-01T00:00:00Z'});assert.equal(scheduled.departureTime,'2000-01-01T00:00:00.000Z');
+});
+test('search matches normalized stored locations and exact departure bounds without exposing full/past rides',async()=>{
+  const host=await newActor();const base=new Date(Date.now()+86400000);base.setUTCHours(12,0,0,0);
+  const match=await newRide(host,{origin:{name:'Search Campus',address:'1 Search Road',terminal:null},destination:{name:'Search Station',address:null,terminal:null},departureTime:base.toISOString()});
+  const wrong=await newRide(host,{origin:{name:'Different Campus'},destination:{name:'Search Station'},departureTime:base.toISOString()});
+  const params=new URLSearchParams({from:'  SEARCH   CAMPUS ',to:'Search Station',after:base.toISOString(),before:new Date(+base+3600000).toISOString()});
+  const results=await (await fetch(origin+'/api/rides?'+params)).json();assert.deepEqual(results.map(r=>r.id),[match.id]);assert.ok(!results.some(r=>r.id===wrong.id));
+  params.set('from','1 Search Road');assert.equal((await (await fetch(origin+'/api/rides?'+params)).json())[0].id,match.id);
+  params.set('before',base.toISOString());assert.equal((await fetch(origin+'/api/rides?'+params)).status,400);
+  assert.equal((await fetch(origin+'/api/rides?after=invalid')).status,400);
+});
+test('realtime chat events, idempotent sends, author deletion, and persisted reactions enforce membership',async()=>{
+  const host=await newActor(),guest=await newActor(),outsider=await newActor(),ride=await newRide(host);
+  await operate(guest,ride.id,'join');
+  assert.equal((await outsider.client.request('/api/rides/'+ride.id+'/events')).status,403);
+  const abort=new AbortController();const response=await guest.client.request('/api/rides/'+ride.id+'/events',{signal:abort.signal});assert.equal(response.status,200);
+  const reader=response.body.getReader();let buffer='';
+  const next=async label=>{
+    const deadline=setTimeout(()=>abort.abort(),5000);
+    try{while(!buffer.includes(label)){const part=await reader.read();if(part.done)assert.fail('Event stream closed before '+label);buffer+=new TextDecoder().decode(part.value);}buffer='';}finally{clearTimeout(deadline);}
+  };
+  try{
+    await next('event: changed');
+    const key=randomUUID();const send=()=>host.client.request('/api/rides/'+ride.id+'/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:'Realtime durable message',clientMessageId:key})});
+    const first=await(await send()).json();await next('event: changed');await send();
+    let history=await(await guest.client.request('/api/rides/'+ride.id+'/messages')).json();assert.equal(history.messages.length,1);
+    const messageId=history.messages[0].id;
+    const react=(who,method)=>who.client.request('/api/rides/'+ride.id+'/messages/'+messageId+'/reactions',{method,headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({emoji:'👍'})});
+    assert.equal((await react(outsider,'PUT')).status,403);assert.equal((await react(guest,'PUT')).status,200);await next('event: changed');await react(guest,'PUT');
+    history=await(await host.client.request('/api/rides/'+ride.id+'/messages')).json();assert.equal(history.messages[0].reactions.length,1);assert.ok(BigInt(history.revision)>BigInt(first.revision));
+    const remove=who=>who.client.request('/api/rides/'+ride.id+'/messages/'+messageId,{method:'DELETE',headers:{Origin:origin}});
+    assert.equal((await remove(guest)).status,403);assert.equal((await remove(host)).status,200);await next('event: changed');
+    assert.equal((await(await guest.client.request('/api/rides/'+ride.id+'/messages')).json()).messages.length,0);
+    await operate(guest,ride.id,'leave');await next('event: forbidden');
+  }finally{abort.abort();await reader.cancel().catch(()=>{});}
+});
+
+test('reactions survive restart, remove idempotently, and cancelled chat mutations fail closed',async()=>{
+  const host=await newActor(),guest=await newActor(),ride=await newRide(host);await operate(guest,ride.id,'join');
+  const sent=await(await message(host,ride.id,{body:'Persistent reaction'})).json();const id=sent.messages[0].id;
+  const react=(method,emoji='👍')=>guest.client.request('/api/rides/'+ride.id+'/messages/'+id+'/reactions',{method,headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({emoji})});
+  assert.equal((await react('PUT','not-an-emoji')).status,400);assert.equal((await react('PUT')).status,200);
+  const saved=await(await history(guest,ride.id)).json();
+  await stop();await start();host.client=cookieClient(origin,host.client.jar);guest.client=cookieClient(origin,guest.client.jar);
+  assert.deepEqual(await(await history(guest,ride.id)).json(),saved);
+  assert.equal((await react('DELETE')).status,200);assert.equal((await react('DELETE')).status,200);
+  assert.deepEqual((await(await history(guest,ride.id)).json()).messages[0].reactions,[]);
+  await operate(host,ride.id,'cancel');assert.equal((await react('PUT')).status,409);
+  assert.equal((await host.client.request('/api/rides/'+ride.id+'/messages/'+id,{method:'DELETE',headers:{Origin:origin}})).status,409);
+  assert.equal((await(await history(host,ride.id)).json()).messages.length,1);
 });

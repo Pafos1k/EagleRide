@@ -1,8 +1,8 @@
 import ChatMessages from '../src/components/ChatMessages';
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, ArrowLeft, Info, RefreshCw } from 'lucide-react';
-import { getChat, getRide, sendMessage, ApiError } from '../src/api/rides';
+import { Send, ArrowLeft, Info } from 'lucide-react';
+import { getChat, getRide, sendMessage, deleteMessage, reactMessage, ApiError } from '../src/api/rides';
 import { useAuth } from '../src/auth/AuthProvider';
 import { locationLabel, type PersistedRide } from '../shared/rides';
 import type { RideChat } from '../shared/messages';
@@ -20,6 +20,8 @@ const ChatView: React.FC = () => {
   const [reload, setReload] = useState(0);
   const sending = useRef(false);
   const generation = useRef(0);
+  const pendingMessage=useRef<{body:string;id:string;rideId:string}|null>(null);
+  const [connected,setConnected]=useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const current = ++generation.current;
@@ -28,12 +30,27 @@ const ChatView: React.FC = () => {
     (async () => {
       const history = await getChat(id!, controller.signal);
       const detail = await getRide(id!, controller.signal);
-      if (!controller.signal.aborted && generation.current === current) { setChat(history); setRide(detail); }
+      if (!controller.signal.aborted && generation.current === current) { setChat(previous=>previous && BigInt(previous.revision)>BigInt(history.revision)?previous:history); setRide(detail); }
     })().catch(error => {
       if (!controller.signal.aborted) setError(error.message);
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => { controller.abort(); ++generation.current; };
   }, [id, user?.id, reload]);
+  useEffect(()=>{
+    if(!id || !user)return;
+    const events=new EventSource('/api/rides/'+encodeURIComponent(id)+'/events');
+    const abort=new AbortController();let fetching=false,queued=false;
+    const update=async()=>{
+      if(fetching){queued=true;return;}fetching=true;
+      try{do{queued=false;const history=await getChat(id,abort.signal);if(!abort.signal.aborted){setChat(previous=>previous && BigInt(previous.revision)>BigInt(history.revision)?previous:history);setConnected(true);}}while(queued && !abort.signal.aborted);}
+      catch(error){if(!abort.signal.aborted){setConnected(false);if(error instanceof ApiError && [401,403,404].includes(error.status)){setChat(null);events.close();}}}
+      finally{fetching=false;}
+    };
+    events.addEventListener('changed',()=>void update());
+    events.addEventListener('forbidden',()=>{abort.abort();setConnected(false);setChat(null);setError('Only current participants can access this chat.');events.close();});
+    events.onerror=()=>setConnected(false);
+    return()=>{events.close();abort.abort();};
+  },[id,user?.id,reload]);
   const messages = chat?.messages ?? [];
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -44,14 +61,16 @@ const ChatView: React.FC = () => {
     const current = generation.current;
     sending.current = true; setBusy(true); setError('');
     try {
-      const updated = await sendMessage(id!, input.trim());
-      if (current === generation.current) { setChat(updated); setInput(''); }
+      if(!pendingMessage.current || pendingMessage.current.body!==input.trim() || pendingMessage.current.rideId!==id)pendingMessage.current={body:input.trim(),id:crypto.randomUUID(),rideId:id!};
+      const updated = await sendMessage(id!, input.trim(),pendingMessage.current.id);
+      pendingMessage.current=null;
+      if (current === generation.current) { setChat(previous=>previous && BigInt(previous.revision)>BigInt(updated.revision)?previous:updated); setInput(''); }
     } catch (error) {
       if (current !== generation.current) return;
       setError(error instanceof Error ? error.message : 'Unable to send message.');
       if (error instanceof ApiError && [401, 403, 404].includes(error.status)) setChat(null);
       if (error instanceof ApiError && error.status === 409) {
-        try { const updated = await getChat(id!); if (current === generation.current) setChat(updated); }
+        try { const updated = await getChat(id!); if (current === generation.current) setChat(previous=>previous && BigInt(previous.revision)>BigInt(updated.revision)?previous:updated); }
         catch { if (current === generation.current) setChat(null); }
       }
     } finally { sending.current = false; setBusy(false); }
@@ -74,9 +93,7 @@ const ChatView: React.FC = () => {
             </p>
           </div>
         </div>
-        <button aria-label="Refresh chat" disabled={busy} onClick={() => setReload(v => v + 1)} className="p-1.5 sm:p-2 hover:bg-slate-50 rounded-full transition-colors text-slate-400 shrink-0">
-          <RefreshCw size={18} className="sm:w-5 sm:h-5" />
-        </button>
+        <span className="text-xs text-neutral-500" role="status">{connected?'Connected':'Reconnecting…'}</span>
       </div>
 
       {/* Messages */}
@@ -85,14 +102,14 @@ const ChatView: React.FC = () => {
           <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 sm:p-4 text-center max-w-sm">
             <Info size={16} className="text-neutral-700 mx-auto mb-1.5 sm:mb-2" />
             <p className="text-xs text-slate-500 font-medium">
-              {chat.cancelledAt ? 'This ride is cancelled. Chat history is read-only.' : 'Coordinate your pickup here. Refresh to check for new messages.'}
+              {chat.cancelledAt ? 'This ride is cancelled. Chat history is read-only.' : 'Coordinate your pickup here. Messages update automatically.'}
             </p>
           </div>
         </div>
 
         {error && <p role="alert" className="text-red-700">{error}</p>}
         {!messages.length && <p className="text-center text-slate-500">No messages yet.</p>}
-        <ChatMessages messages={messages} currentUserId={user?.id} />
+        <ChatMessages messages={messages} currentUserId={user?.id} readOnly={!!chat.cancelledAt} onDelete={async messageId=>{try{await deleteMessage(id!,messageId);}catch(error){setError(error instanceof Error?error.message:'Unable to delete.');}}} onReact={async(messageId,emoji,remove)=>{try{await reactMessage(id!,messageId,emoji,remove);}catch(error){setError(error instanceof Error?error.message:'Unable to react.');}}} />
       </div>
 
       {/* Input */}

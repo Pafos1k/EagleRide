@@ -225,7 +225,7 @@ const About: React.FC = () => {
           <p className="text-neutral-400 text-sm sm:text-base md:text-lg">Join other Eagles who are saving on their way home.</p>
         </div>
         <Link to="/create" className="bg-white text-black px-6 sm:px-10 py-3.5 sm:py-5 rounded-xl sm:rounded-2xl font-bold hover:bg-neutral-200 transition-all whitespace-nowrap text-sm sm:text-base">
-          Request a Ride
+          Plan a ride
         </Link>
       </motion.div>
 

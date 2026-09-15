@@ -296,6 +296,10 @@ const RideDetail: React.FC = () => {
           </div>
         </div>
       </div>
+      <footer className="text-xs text-neutral-500 text-center max-w-3xl mx-auto px-4 pb-8 leading-relaxed">
+        EagleRide facilitates ride coordination and is not the transportation provider. Route, timing, and fare information are estimates. You are responsible for your transportation arrangements and personal safety.
+        <p className="mt-2">Terms — coming soon · Privacy — coming soon</p>
+      </footer>
     </div>
   );
 };
