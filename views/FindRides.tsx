@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Filter, MapPin, ChevronRight } from 'lucide-react';
 import RideSearchSchedule from '../src/components/RideSearchSchedule';
-import {localDay,searchWindow} from '../src/lib/rideSearchSchedule';
+import {localDay,buildRideSearch,scheduleSummary,type SearchFields} from '../src/lib/rideSearchSchedule';
+import {recognizedCampus,campusGroups} from '../shared/campuses';
 import { listRides } from '../src/api/rides';
 import { locationLabel, rideCategory, type PersistedRide } from '../shared/rides';
 
@@ -12,7 +13,13 @@ const FindRides: React.FC = () => {
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   const [rides, setRides] = useState<PersistedRide[]>([]);
-  const [fields,setFields]=useState({from:'',to:'',date:localDay(new Date()),earliest:'',latest:''});
+  const emptyFields=():SearchFields=>({from:'',to:'',date:localDay(new Date()),earliest:'',latest:'',periods:[],custom:false});
+  const [fields,setFields]=useState<SearchFields>(emptyFields);
+  const [filtersOpen,setFiltersOpen]=useState(false);
+  const [dateEnabled,setDateEnabled]=useState(false);
+  const [nearby,setNearby]=useState(false);
+  const [summary,setSummary]=useState('');
+  const hasCampus=!!(recognizedCampus(fields.from) || recognizedCampus(fields.to));
   const [search,setSearch]=useState<Record<string,string>>({});
 
   useEffect(() => {
@@ -30,6 +37,19 @@ const FindRides: React.FC = () => {
     return () => controller.abort();
   }, [search, reload]);
 
+  const applySearch=(value=fields,withDate=dateEnabled,withNearby=nearby)=>{
+    const includeCampuses=withNearby && !!(recognizedCampus(value.from) || recognizedCampus(value.to));
+    try {
+      const query=buildRideSearch(value,withDate,includeCampuses);
+      setSearch(query);setNearby(includeCampuses);setError('');
+      setSummary([withDate?scheduleSummary(value):'',includeCampuses?'Nearby BC campuses':''].filter(Boolean).join(' · '));
+    }catch(error){setError(error instanceof Error?error.message:'Choose a valid departure window.');}
+  };
+  const clearFilters=()=>{
+    const next={...emptyFields(),from:fields.from,to:fields.to};
+    setFields(next);setDateEnabled(false);setNearby(false);applySearch(next,false,false);
+  };
+
   const formatDestinationName = (ride: PersistedRide) => locationLabel(ride.destination);
 
   return (
@@ -41,15 +61,19 @@ const FindRides: React.FC = () => {
         </div>
         
         <form className="w-full space-y-3" onSubmit={event=>{
-          event.preventDefault();const query:Record<string,string>={};
-          if(fields.from.trim())query.from=fields.from.trim();if(fields.to.trim())query.to=fields.to.trim();
-          try { Object.assign(query,searchWindow(fields.date,fields.earliest,fields.latest)); }
-          catch(error){setError(error instanceof Error?error.message:'Choose a valid departure window.');return;}
-          setSearch(query);
+          event.preventDefault();applySearch();
         }}>
           <div className="grid sm:grid-cols-2 gap-3">{(['from','to'] as const).map(key=><label key={key} className="text-left text-sm">{key==='from'?'From':'To'}<input list="ride-locations" className="w-full bg-neutral-100 rounded-xl p-3 mt-1" value={fields[key]} onChange={e=>setFields({...fields,[key]:e.target.value})}/></label>)}</div>
-          <datalist id="ride-locations">{['Boston College','Newton Campus','Logan Airport (BOS)','South Station','177 Huntington Ave'].map(name=><option key={name} value={name}/>)}</datalist>
-          <RideSearchSchedule value={fields} onChange={value=>setFields({...fields,...value})}/>
+          <datalist id="ride-locations">{[...campusGroups.flatMap(group=>group.campuses.map(campus=>campus.aliases[0])),'Logan Airport (BOS)','South Station','177 Huntington Ave'].map(name=><option key={name} value={name}/>)}</datalist>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-left">
+            <button type="button" aria-expanded={filtersOpen} aria-controls="ride-search-filters" className="min-h-11 inline-flex items-center gap-2 px-3 rounded-xl bg-neutral-100" onClick={()=>setFiltersOpen(!filtersOpen)}><Filter size={16}/>Filters</button>
+            {!filtersOpen && summary && <span className="text-neutral-600 flex-1">{summary}</span>}
+            {(summary || dateEnabled || nearby) && <button type="button" className="min-h-11 px-2 underline text-neutral-500" onClick={clearFilters}>Clear filters</button>}
+          </div>
+          {filtersOpen && <div id="ride-search-filters" className="space-y-3">
+            <RideSearchSchedule active={dateEnabled} value={fields} onChange={value=>{const next={...fields,...value};setFields(next);setDateEnabled(true);applySearch(next,true,nearby);}}/>
+            {hasCampus && <label className="flex items-center gap-2 min-h-11 text-sm text-neutral-700 text-left"><input type="checkbox" checked={nearby} onChange={event=>{setNearby(event.target.checked);applySearch(fields,dateEnabled,event.target.checked);}} className="w-5 h-5 accent-black"/>Include nearby BC campuses</label>}
+          </div>}
           <button className="w-full bg-black text-white rounded-xl py-3 font-bold">Search rides</button>
         </form>
       </div>
@@ -63,6 +87,12 @@ const FindRides: React.FC = () => {
               <Link key={ride.id} to={`/ride/${ride.id}`} className="group">
                 <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden hover:border-black transition-all">
                   
+                  {(recognizedCampus(ride.origin.name) || recognizedCampus(ride.origin.address ?? '') || recognizedCampus(ride.destination.name) || recognizedCampus(ride.destination.address ?? '')) && <p className="px-3.5 sm:px-6 pt-3 text-sm font-semibold text-neutral-800 break-words">
+                    {[['Pickup',ride.origin],['Dropoff',ride.destination]].map(([label,location])=>{
+                      const place=location as PersistedRide['origin'];const campus=recognizedCampus(place.name) ?? recognizedCampus(place.address ?? '');
+                      return campus?`${label}: ${campus.campus.label}`:null;
+                    }).filter(Boolean).join(' · ')}
+                  </p>}
                   {/* Top Section: Departure - Destination - People - Arrow */}
                   <div className="p-3.5 sm:p-6 flex items-center justify-between gap-2 sm:gap-4">
                     
@@ -127,7 +157,7 @@ const FindRides: React.FC = () => {
             <h3 className="text-xl font-bold text-neutral-800">No Matches Found</h3>
             <p className="text-neutral-500 max-w-xs mx-auto mt-2 mb-8 text-sm">We couldn't find any rides for this destination. Try a broader search or offer your own ride!</p>
             <button 
-              onClick={() => (setFields({from:'',to:'',date:localDay(new Date()),earliest:'',latest:''}),setSearch({}),setReload(value=>value+1))}
+              onClick={() => {setFields(emptyFields());setDateEnabled(false);setNearby(false);setSummary('');setFiltersOpen(false);setSearch({});}}
               className="bg-black text-white px-8 py-3 rounded-xl font-bold text-sm hover:bg-neutral-800 transition-colors"
             >
               Reset All Filters

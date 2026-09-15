@@ -1,3 +1,4 @@
+import {locationSearchTerms} from '../shared/campuses';
 import type { RideSearch } from '../shared/rideSearch';
 import type { Pool, PoolClient } from 'pg';
 import { rideCategory, type ActivityRide, type CreateRideInput, type PersistedRide } from '../shared/rides';
@@ -21,11 +22,12 @@ function toRide(row: Record<string, any>): PersistedRide {
 export async function listRides(pool: Pool, search: RideSearch = {}): Promise<PersistedRide[]> {
   const result = await pool.query(`${selectRides} WHERE r.cancelled_at IS NULL AND r.departure_at > now()
     AND (SELECT count(*) FROM ride_participants active WHERE active.ride_id=r.id AND active.left_at IS NULL) < r.seats_total
-    AND ($1::text IS NULL OR lower(regexp_replace(btrim(r.origin_name),'\\s+',' ','g'))=$1 OR lower(regexp_replace(btrim(r.origin_address),'\\s+',' ','g'))=$1)
-    AND ($2::text IS NULL OR lower(regexp_replace(btrim(r.destination_name),'\\s+',' ','g'))=$2 OR lower(regexp_replace(btrim(r.destination_address),'\\s+',' ','g'))=$2)
+    AND ($1::text[] IS NULL OR lower(regexp_replace(btrim(r.origin_name),'\\s+',' ','g'))=ANY($1) OR lower(regexp_replace(btrim(r.origin_address),'\\s+',' ','g'))=ANY($1))
+    AND ($2::text[] IS NULL OR lower(regexp_replace(btrim(r.destination_name),'\\s+',' ','g'))=ANY($2) OR lower(regexp_replace(btrim(r.destination_address),'\\s+',' ','g'))=ANY($2))
     AND ($3::timestamptz IS NULL OR r.departure_at >= $3)
     AND ($4::timestamptz IS NULL OR r.departure_at < $4)
-    ORDER BY r.departure_at, r.id`, [search.from?.trim().replace(/\s+/g,' ').toLowerCase() || null,search.to?.trim().replace(/\s+/g,' ').toLowerCase() || null,search.after ?? null,search.before ?? null]);
+    AND ($5::jsonb IS NULL OR EXISTS (SELECT 1 FROM jsonb_array_elements($5::jsonb) bounds WHERE r.departure_at >= (bounds->>'after')::timestamptz AND r.departure_at < (bounds->>'before')::timestamptz))
+    ORDER BY r.departure_at, r.id`, [locationSearchTerms(search.from,search.nearbyCampuses==='true'),locationSearchTerms(search.to,search.nearbyCampuses==='true'),search.after ?? null,search.before ?? null,search.windows?JSON.stringify(search.windows):null]);
   return result.rows.map(toRide);
 }
 export async function getRide(db: Pool | PoolClient, id: string): Promise<PersistedRide | null> {

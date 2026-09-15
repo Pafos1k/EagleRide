@@ -497,6 +497,8 @@ test('public trip search uses origin, destination and departure window',async({p
   await page.goto('/#/find');
   await page.getByLabel('From',{exact:true}).fill('Browser operations test');
   await page.getByLabel('To',{exact:true}).fill('Boston College');
+  await expect(page.getByRole('button',{name:'Tomorrow',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Filters',exact:true}).click();
   await page.getByRole('button',{name:'Tomorrow',exact:true}).click();
   await page.getByRole('button',{name:'Custom',exact:true}).click();
   await page.getByRole('combobox',{name:'From time',exact:true}).selectOption('00:00');

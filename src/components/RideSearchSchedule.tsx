@@ -1,16 +1,16 @@
 import React, {useEffect,useRef,useState} from 'react';
 import {ChevronLeft,ChevronRight} from 'lucide-react';
-import {dayAfter,localDay,timeLabel,timeWindows,type TimePreset} from '../lib/rideSearchSchedule';
-type Value={date:string;earliest:string;latest:string};
-export default function RideSearchSchedule({value,onChange}:{value:Value;onChange:(value:Value)=>void}){
+import {dayAfter,localDay,timeLabel,timeWindows,type TimePreset,type Period} from '../lib/rideSearchSchedule';
+type Value={date:string;earliest:string;latest:string;periods?:Period[];custom?:boolean};
+export default function RideSearchSchedule({value,onChange,active=true}:{value:Value;onChange:(value:Value)=>void;active?:boolean}){
   const today=new Date(),todayKey=localDay(today);
-  const [preset,setPreset]=useState<TimePreset>('Any time');
-  useEffect(()=>{if(!value.earliest && !value.latest)setPreset('Any time');},[value.earliest,value.latest]);
+  const periods=value.periods ?? [];
+  const preset=value.custom?'Custom':periods.length?'Periods':'Any time';
   const [calendar,setCalendar]=useState(false);
   const [month,setMonth]=useState(()=>new Date(today.getFullYear(),today.getMonth(),1));
   const picker=useRef<HTMLDivElement>(null),trigger=useRef<HTMLButtonElement>(null);
   const quick=[0,1,2].map(offset=>{const date=dayAfter(today,offset);return {date:localDay(date),label:offset===0?'Today':offset===1?'Tomorrow':date.toLocaleDateString(undefined,{month:'short',day:'numeric'})};});
-  const customDate=!quick.some(day=>day.date===value.date);
+  const customDate=active && !quick.some(day=>day.date===value.date);
   useEffect(()=>{
     if(!calendar)return;
     picker.current?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')?.focus();
@@ -24,7 +24,7 @@ export default function RideSearchSchedule({value,onChange}:{value:Value;onChang
   return <div className="space-y-3 text-left">
     <fieldset className="relative"><legend className="sr-only">Travel date</legend>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        {quick.map(day=><button type="button" key={day.date} aria-pressed={value.date===day.date} className={pill(value.date===day.date)} onClick={()=>{onChange({...value,date:day.date});setCalendar(false);}}>{day.label}</button>)}
+        {quick.map(day=><button type="button" key={day.date} aria-pressed={active && value.date===day.date} className={pill(active && value.date===day.date)} onClick={()=>{onChange({...value,date:day.date});setCalendar(false);}}>{day.label}</button>)}
         <button type="button" ref={trigger} aria-label="Choose date" aria-pressed={customDate} aria-haspopup="dialog" aria-expanded={calendar} className={pill(customDate)} onClick={()=>{const selected=new Date(value.date+'T12:00');setMonth(new Date(selected.getFullYear(),selected.getMonth(),1));setCalendar(!calendar);}}>{customDate?new Date(value.date+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}):'Choose date'}</button>
       </div>
       {calendar && <div ref={picker} role="dialog" aria-label="Choose travel date" onKeyDown={event=>{if(event.key==='Escape'){setCalendar(false);trigger.current?.focus();}}} className="absolute top-full left-0 sm:left-auto sm:right-0 z-20 mt-2 w-full max-w-sm rounded-2xl bg-white border border-neutral-200 shadow-lg p-3">
@@ -36,17 +36,21 @@ export default function RideSearchSchedule({value,onChange}:{value:Value;onChang
         <div className="grid grid-cols-7 text-center text-xs text-neutral-500">{['Su','Mo','Tu','We','Th','Fr','Sa'].map(day=><span key={day}>{day}</span>)}</div>
         <div className="grid grid-cols-7 gap-y-1">
           {Array.from({length:month.getDay()},(_,i)=><span key={'blank'+i}/>)}
-          {Array.from({length:days},(_,i)=>{const date=new Date(month.getFullYear(),month.getMonth(),i+1),key=localDay(date);return <button type="button" key={key} disabled={key<todayKey} aria-label={date.toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'})} aria-pressed={value.date===key} className={`min-h-11 rounded-xl text-sm disabled:opacity-25 ${value.date===key?'bg-black text-white':'hover:bg-neutral-100'}`} onClick={()=>choose(key)}>{i+1}</button>;})}
+          {Array.from({length:days},(_,i)=>{const date=new Date(month.getFullYear(),month.getMonth(),i+1),key=localDay(date);return <button type="button" key={key} disabled={key<todayKey} aria-label={date.toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'})} aria-pressed={active && value.date===key} className={`min-h-11 rounded-xl text-sm disabled:opacity-25 ${active && value.date===key?'bg-black text-white':'hover:bg-neutral-100'}`} onClick={()=>choose(key)}>{i+1}</button>;})}
         </div>
         <button type="button" className="w-full min-h-11 mt-1 text-sm text-neutral-500" onClick={()=>{setCalendar(false);trigger.current?.focus();}}>Close calendar</button>
       </div>}
     </fieldset>
     <fieldset><legend className="sr-only">Departure time</legend>
-      <div className="flex flex-wrap gap-2">{([...Object.keys(timeWindows),'Custom'] as TimePreset[]).map(name=><button type="button" key={name} aria-pressed={preset===name} className={pill(preset===name)+' flex-1'} onClick={()=>{setPreset(name);if(name!=='Custom'){const [earliest,latest]=timeWindows[name];onChange({...value,earliest,latest});}else onChange({...value,earliest:value.earliest || '06:00',latest:value.latest || '23:59'});}}>{name}</button>)}</div>
+      <div className="flex flex-wrap gap-2">{([...Object.keys(timeWindows),'Custom'] as TimePreset[]).map(name=><button type="button" key={name} aria-pressed={name==='Any time'?preset==='Any time':name==='Custom'?!!value.custom:periods.includes(name as Period)} className={pill(name==='Any time'?preset==='Any time':name==='Custom'?!!value.custom:periods.includes(name as Period))+' flex-1'} onClick={()=>{
+        if(name==='Custom')onChange({...value,custom:true,periods:[],earliest:value.earliest || '06:00',latest:value.latest || '23:59'});
+        else if(name==='Any time')onChange({...value,custom:false,periods:[],earliest:'',latest:''});
+        else onChange({...value,custom:false,earliest:'',latest:'',periods:periods.includes(name)?periods.filter(p=>p!==name):[...periods,name]});
+      }}>{name}</button>)}</div>
       {preset==='Custom' && <div className="grid grid-cols-2 gap-3 mt-3 rounded-xl bg-neutral-50 p-3">
         {(['earliest','latest'] as const).map(key=><label key={key} className="text-xs text-neutral-600">{key==='earliest'?'From time':'To time'}<select aria-label={key==='earliest'?'From time':'To time'} className="block w-full min-h-11 mt-1 rounded-lg bg-white px-2 text-sm text-neutral-900" value={value[key]} onChange={event=>onChange({...value,[key]:event.target.value})}>{times.map(time=><option key={time} value={time}>{timeLabel(time)}</option>)}</select></label>)}
       </div>}
-      <p className="text-xs text-neutral-500 mt-2" aria-live="polite">{preset==='Any time'?'Entire selected day':`${timeLabel(value.earliest || '00:00')} – ${timeLabel(value.latest || '23:59')}`}</p>
+      <p className="text-xs text-neutral-500 mt-2" aria-live="polite">{preset==='Any time'?'Entire selected day':preset==='Periods'?(['Morning','Afternoon','Evening'] as Period[]).filter(p=>periods.includes(p)).join(' + '):`${timeLabel(value.earliest || '00:00')} – ${timeLabel(value.latest || '23:59')}`}</p>
     </fieldset>
   </div>;
 }

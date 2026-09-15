@@ -42,3 +42,36 @@ test('normal search shows quick choices and hides native date/time inputs and cu
   assert.doesNotMatch(html,/<input|<select|role="dialog"/);
   assert.match(html,/aria-pressed="true"/);assert.match(html,/Entire selected day/);
 });
+
+test('collapsed initial search has no date/time filtering and retains From/To',async()=>{
+  const {buildRideSearch}=await import('../src/lib/rideSearchSchedule.ts');
+  const fields={from:' Newton Campus ',to:'Logan Airport (BOS)',date:'2026-09-16',earliest:'',latest:'',periods:[],custom:false};
+  assert.deepEqual(buildRideSearch(fields,false,false),{from:'Newton Campus',to:'Logan Airport (BOS)'});
+  const {MemoryRouter}=await import('react-router-dom');const {default:FindRides}=await import('../views/FindRides.tsx');
+  const html=renderToStaticMarkup(React.createElement(MemoryRouter,null,React.createElement(FindRides)));
+  assert.match(html,/Filters/);assert.match(html,/aria-expanded="false"/);assert.doesNotMatch(html,/Choose date|Morning|Custom|Entire selected day/);
+});
+test('multi-select keeps disjoint windows, custom is exclusive, and summaries retain selection',async()=>{
+  const {buildRideSearch,scheduleSummary}=await import('../src/lib/rideSearchSchedule.ts');
+  const now=new Date(2026,8,15,12),value={from:'',to:'',date:'2026-09-16',earliest:'',latest:'',periods:['Morning','Evening'],custom:false};
+  const query=buildRideSearch(value,true,false,now),windows=JSON.parse(query.windows);
+  assert.equal(windows.length,2);assert.ok(Date.parse(windows[0].before)<Date.parse(windows[1].after));
+  const afternoon=new Date(2026,8,16,14);assert.ok(!windows.some(w=>+afternoon>=Date.parse(w.after) && +afternoon<Date.parse(w.before)));
+  assert.equal(scheduleSummary(value,now),'Tomorrow · Morning + Evening');
+  for(const periods of [['Morning'],['Morning','Afternoon'],['Afternoon','Evening'],['Morning','Evening']])assert.equal(JSON.parse(buildRideSearch({...value,periods},true,false,now).windows).length,periods.length);
+  const custom=buildRideSearch({...value,custom:true,periods:[],earliest:'09:00',latest:'10:30'},true,false,now);
+  assert.ok(custom.after && custom.before);assert.equal(custom.windows,undefined);
+  const any=buildRideSearch({...value,periods:[]},true,false,now);assert.equal(any.windows,undefined);
+  assert.equal(any.after,new Date(2026,8,16).toISOString());
+  const html=renderToStaticMarkup(React.createElement(RideSearchSchedule,{value,onChange:()=>{}}));
+  assert.match(html,/Morning \+ Evening/);assert.doesNotMatch(html,/<select/);
+});
+test('campus configuration expands only recognized endpoint groups',async()=>{
+  const {locationSearchTerms,recognizedCampus}=await import('../shared/campuses.ts');
+  assert.equal(recognizedCampus('  NEWTON   CAMPUS ').campus.id,'newton');
+  const exact=locationSearchTerms('Newton Campus');assert.ok(!exact.includes('boston college'));
+  assert.ok(locationSearchTerms('Newton Campus',true).includes('boston college'));
+  assert.ok(locationSearchTerms('Boston College Main Campus',true).includes('newton campus'));
+  assert.deepEqual(locationSearchTerms('Logan Airport (BOS)',true),['logan airport (bos)']);
+  assert.equal(recognizedCampus('Some Main Campus'),null);
+});

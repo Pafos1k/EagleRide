@@ -15,3 +15,21 @@ export function searchWindow(date:string, earliest:string, latest:string, now=ne
   return {after:start.toISOString(),before:end.toISOString()};
 }
 export const timeLabel=(time:string)=>{ const [hour,minute]=time.split(':').map(Number);return `${hour%12 || 12}:${String(minute).padStart(2,'0')} ${hour<12?'AM':'PM'}`; };
+export type Period='Morning'|'Afternoon'|'Evening';
+export type SearchFields={from:string;to:string;date:string;earliest:string;latest:string;periods:Period[];custom:boolean};
+export function buildRideSearch(value:SearchFields,dateEnabled:boolean,nearby:boolean,now=new Date()){
+  const query:Record<string,string>={};
+  if(value.from.trim())query.from=value.from.trim();if(value.to.trim())query.to=value.to.trim();
+  if(nearby)query.nearbyCampuses='true';
+  if(dateEnabled){
+    if(value.custom)Object.assign(query,searchWindow(value.date,value.earliest,value.latest,now));
+    else if(value.periods.length)query.windows=JSON.stringify(value.periods.map(period=>{const [start,end]=timeWindows[period];return searchWindow(value.date,start,end,now);}));
+    else Object.assign(query,searchWindow(value.date,'','',now));
+  }
+  return query;
+}
+export function scheduleSummary(value:SearchFields,now=new Date()){
+  const day=value.date===localDay(now)?'Today':value.date===localDay(dayAfter(now,1))?'Tomorrow':new Date(value.date+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric'});
+  const periods=(['Morning','Afternoon','Evening'] as Period[]).filter(period=>value.periods.includes(period));
+  return `${day} · ${value.custom?`${timeLabel(value.earliest)}–${timeLabel(value.latest)}`:periods.length?periods.join(' + '):'Any time'}`;
+}

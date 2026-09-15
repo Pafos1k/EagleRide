@@ -813,3 +813,28 @@ test('reactions: migration safely consolidates legacy stacked reactions',async()
     assert.equal((await client.query('SELECT count(*) FROM messages WHERE id=$1',[id])).rows[0].count,'1');
   }finally{await client.query('ROLLBACK');client.release();}
 });
+
+test('search: disjoint windows use OR without including the afternoon gap and retain capacity rules',async()=>{
+  const host=await newActor(),day=new Date(Date.now()+86400000);day.setUTCHours(0,0,0,0);
+  const time=hour=>new Date(+day+hour*3600000).toISOString(),location='Window search '+randomUUID();
+  const rides=[];for(const hour of [8,14,19])rides.push(await newRide(host,{origin:{name:location},departureTime:time(hour)}));
+  const full=await newRide(host,{origin:{name:location},departureTime:time(8),seatsTotal:1});
+  const params=new URLSearchParams({from:location,windows:JSON.stringify([{after:time(6),before:time(12)},{after:time(17),before:time(24)}])});
+  const result=await(await fetch(origin+'/api/rides?'+params)).json();assert.deepEqual(result.map(r=>r.id),[rides[0].id,rides[2].id]);assert.ok(!result.some(r=>r.id===full.id));
+  params.set('windows','not-json');assert.equal((await fetch(origin+'/api/rides?'+params)).status,400);
+  params.set('windows',JSON.stringify([{after:time(17),before:time(6)}]));assert.equal((await fetch(origin+'/api/rides?'+params)).status,400);
+});
+test('search: nearby campus opt-in works at either endpoint without rewriting actual locations',async()=>{
+  const host=await newActor(),airport='Campus search '+randomUUID();
+  const main=await newRide(host,{origin:{name:'Boston College',address:'140 Commonwealth Ave, Chestnut Hill, MA'},destination:{name:airport}});
+  const newton=await newRide(host,{origin:{name:'Newton Campus',address:'885 Centre St, Newton, MA'},destination:{name:airport}});
+  const run=async query=>(await(await fetch(origin+'/api/rides?'+new URLSearchParams(query))).json());
+  assert.deepEqual((await run({from:'Newton Campus',to:airport})).map(r=>r.id),[newton.id]);
+  const expanded=await run({from:'Newton Campus',to:airport,nearbyCampuses:'true'});
+  assert.deepEqual(new Set(expanded.map(r=>r.id)),new Set([main.id,newton.id]));
+  assert.equal(expanded.find(r=>r.id===main.id).origin.name,'Boston College');assert.equal(expanded.find(r=>r.id===newton.id).origin.name,'Newton Campus');
+  assert.deepEqual(new Set((await run({from:'Boston College Main Campus',to:airport,nearbyCampuses:'true'})).map(r=>r.id)),new Set([main.id,newton.id]));
+  const reverseMain=await newRide(host,{origin:{name:airport},destination:{name:'Boston College'}}),reverseNewton=await newRide(host,{origin:{name:airport},destination:{name:'Newton Campus'}});
+  assert.deepEqual(new Set((await run({from:airport,to:'Newton Campus',nearbyCampuses:'true'})).map(r=>r.id)),new Set([reverseMain.id,reverseNewton.id]));
+  assert.deepEqual((await run({from:'Unrecognized campus',to:airport,nearbyCampuses:'true'})),[]);
+});
