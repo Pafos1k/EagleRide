@@ -1,5 +1,6 @@
+import { validateAvatar, AVATAR_LIMIT } from './avatar';
 import { profileInput } from '../../shared/profile';
-import { Router, type ErrorRequestHandler, type RequestHandler } from 'express';
+import { raw, Router, type ErrorRequestHandler, type RequestHandler } from 'express';
 import { createPool } from '../db';
 import { appOrigin, authProvider, AuthFailure } from './provider';
 import { authCookies } from './cookies';
@@ -16,7 +17,9 @@ export function authentication() {
   const pool = process.env.DATABASE_URL ? createPool() : null;
   const requireUser: RequestHandler = async (req, res, next) => {
     try {
-      const identity = await authProvider(req, res).identity();
+      const provider = authProvider(req, res);
+      const identity = await provider.identity();
+      res.locals.uploadAvatar = (body: Buffer, type: string) => provider.uploadAvatar(body, type, identity.subject);
       if (!pool) throw new AuthFailure(503, 'User storage is not configured.');
       res.locals.user = await syncUser(pool, identity);
       next();
@@ -46,9 +49,16 @@ export function authentication() {
   router.get('/profile', requireUser, (_req, res) => res.json(res.locals.user));
   router.patch('/profile', sameOrigin, requireUser, async (req, res) => {
     const parsed = profileInput.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'Enter a name (1–80 plain-text characters) and a valid HTTPS avatar URL, or leave the avatar blank.' });
-    await pool!.query('UPDATE users SET display_name=$1, avatar_url=$2 WHERE id=$3', [parsed.data.fullName, parsed.data.avatarUrl, res.locals.user.id]);
+    if (!parsed.success) return res.status(400).json({ error: 'Enter a name (1–80 plain-text characters) for your display name.' });
+    await pool!.query('UPDATE users SET display_name=$1 WHERE id=$2', [parsed.data.fullName, res.locals.user.id]);
     res.json({ ...res.locals.user, ...parsed.data });
+  });
+  router.post('/profile/avatar', sameOrigin, requireUser, raw({ type: () => true, limit: AVATAR_LIMIT }), async (req, res) => {
+    const type = req.headers['content-type']?.split(';')[0] ?? '';
+    validateAvatar(req.body, type);
+    const avatarUrl = await res.locals.uploadAvatar(req.body, type);
+    await pool!.query('UPDATE users SET avatar_url=$1 WHERE id=$2', [avatarUrl, res.locals.user.id]);
+    res.json({ ...res.locals.user, avatarUrl });
   });
   router.post('/logout', sameOrigin, async (req, res) => {
     try { await authProvider(req, res).logout(); }

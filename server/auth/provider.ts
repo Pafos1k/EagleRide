@@ -87,6 +87,19 @@ export function authProvider(req: Request, res: Response) {
       } finally { cookies.clearPkce(); }
     },
     identity: async () => verify(await tokens()),
+    async uploadAvatar(body: Buffer, contentType: string, subject: string) {
+      const current = await tokens();
+      const path = `${subject}/avatar`;
+      let response: globalThis.Response;
+      try {
+        response = await fetch(`${url}/storage/v1/object/avatars/${path}`, {
+          method: 'POST', headers: { apikey: key, Authorization: `Bearer ${current.access_token}`, 'Content-Type': contentType, 'x-upsert': 'true', 'cache-control': '60' },
+          body: new Uint8Array(body), signal: AbortSignal.timeout(10000),
+        });
+      } catch { throw new AuthFailure(503, 'Photo upload is temporarily unavailable. Please try again.'); }
+      if (!response.ok) throw new AuthFailure(503, 'Photo upload failed. Check the avatars bucket setup or try again.');
+      return `${url}/storage/v1/object/public/avatars/${path}?v=${Date.now()}`;
+    },
     async logout() {
       try {
         if (!cookies.session()) return;

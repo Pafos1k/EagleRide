@@ -8,6 +8,7 @@ export async function mockSupabase(port = 0) {
   let selected = alice;
   const codes = new Map(), access = new Map(), refresh = new Map();
   const calls = [];
+  const storedAvatars = new Map();
   const failures = new Map();
   function issue(user, sessionId = randomUUID()) {
     const expires_at = Math.floor(Date.now() / 1000) + 3600;
@@ -22,9 +23,15 @@ export async function mockSupabase(port = 0) {
     calls.push({ path: url.pathname, search: url.search });
     const json = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(value)); };
     if (failures.has(url.pathname)) return json(failures.get(url.pathname), { message: 'Test provider unavailable' });
-    let data = '';
-    for await (const part of req) data += part;
-    const body = data ? JSON.parse(data) : {};
+    const chunks=[]; for await(const part of req) chunks.push(part);
+    const bytes=Buffer.concat(chunks);
+    if(url.pathname.startsWith('/storage/v1/object/avatars/')) {
+      const session=access.get(req.headers.authorization?.replace(/^Bearer /i,''));
+      if(!session || url.pathname !== '/storage/v1/object/avatars/'+session.user.id+'/avatar') return json(403,{message:'Denied'});
+      if(bytes.length>2097152 || !['image/png','image/jpeg','image/webp'].includes(req.headers['content-type']))return json(400,{message:'Invalid image'});
+      storedAvatars.set(url.pathname,bytes); return json(200,{Key:url.pathname});
+    }
+    const data=bytes.toString(); const body=data ? JSON.parse(data) : {};
     if (url.pathname === '/__test/select-user' && port === 3101) {
       selected = body.user === 'bob' ? bob : alice;
       return json(200, { selected: body.user === 'bob' ? 'bob' : 'alice' });
@@ -60,7 +67,7 @@ export async function mockSupabase(port = 0) {
     json(404, { message: 'Not found' });
   });
   server.listen(port, '127.0.0.1'); await once(server, 'listening');
-  return { url: `http://127.0.0.1:${server.address().port}`, select: user => { selected = user; }, calls, issue,
+  return { url: `http://127.0.0.1:${server.address().port}`, select: user => { selected = user; }, calls, issue, storedAvatars,
     fail: (path, status) => { if (status) failures.set(path, status); else failures.delete(path); },
     stop: () => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }) };
 }

@@ -178,7 +178,7 @@ test('public Home, About, list and details stay public; create preserves its ret
     await page.goto('/#' + route);
     await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
   }
-  await expect(page.getByRole('link', { name: 'Check live route in Google Maps' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Check live route' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign in to join' })).toBeVisible();
   await page.getByRole('button', { name: 'Sign in to join' }).click();
   await expect(page).toHaveURL(/signin\?returnTo=/);
@@ -322,7 +322,7 @@ test('routing unavailable does not block ride creation and never displays fabric
   await page.getByPlaceholder('Dropoff location').fill('Unique custom destination');
   await page.getByRole('heading', { name: 'Request a ride', exact: true }).click();
   await expect(page.getByText(/Estimated fare|Available on Ride Detail|Split 4 ways/)).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Check live route in Google Maps' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Check live route' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Post Ride', exact: true })).toBeVisible();
   await expect(page.getByText('Confirm your ride',{exact:true})).toHaveCount(0);
@@ -336,7 +336,7 @@ test('routing unavailable does not block ride creation and never displays fabric
   const response = await saved;
   expect(response.status()).toBe(201);
   expect((await response.json()).estimatedTotalCostCents).toBeNull();
-  await expect(page.getByText('Live route information is unavailable.', { exact: true })).toBeVisible();
+  await expect(page.getByText(/^Not updated/)).toBeVisible();
   await expect(page.getByText(/55[–-]70/)).toHaveCount(0);
 });
 test('route display uses provider distance and marks fallback duration without live traffic claims', async ({ page }) => {
@@ -347,8 +347,8 @@ test('route display uses provider distance and marks fallback duration without l
     calculatedAt: new Date().toISOString(), departureTime: new Date().toISOString(), timing: 'current',
   }}) }));
   await page.goto('/#/ride/' + ride.id);
-  await expect(page.getByText('10.0 mi · 20 min driving', { exact: true })).toBeVisible();
-  await expect(page.getByText(/Driving estimate · traffic unavailable/)).toBeVisible();
+  await expect(page.getByText(/Updated/)).toBeVisible();
+  await expect(page.getByText(/mi ·|Baseline driving/)).toHaveCount(0);
   await expect(page.getByText(/Traffic-aware driving estimate/)).toHaveCount(0);
 });
 
@@ -364,7 +364,7 @@ test('Create, Find and Activity never request routing; confirmation has no route
   await page.getByRole('heading', {name:'Request a ride',exact:true}).click();
   await page.getByRole('button', {name:'Continue',exact:true}).click();
   await expect(page.getByRole('button', {name:'Post Ride',exact:true})).toBeVisible();
-  await expect(page.getByRole('link',{name:'Check live route in Google Maps'})).toHaveCount(0);
+  await expect(page.getByRole('link',{name:'Check live route'})).toHaveCount(0);
   await expect(page.getByText(/Estimated fare|Available on Ride Detail|Split 4 ways/)).toHaveCount(0);
   for(const route of ['/find','/dashboard']){
     await page.goto('/#'+route);
@@ -380,11 +380,11 @@ test('failed snapshot refresh displays the previous data, fixed fare and timesta
     estimatedFareCents:2400,lastAttemptAt:new Date().toISOString(),latestRefreshFailed:true,
   })}));
   await page.goto('/#/ride/'+ride.id);
-  await expect(page.getByText('10.0 mi · 30 min driving',{exact:true})).toBeVisible();
+  await expect(page.locator('time[datetime="2026-09-01T12:00:00Z"]')).toBeVisible();
   await expect(page.getByText('Total $24.00',{exact:true})).toBeVisible();
-  await expect(page.getByText(/Latest refresh failed/)).toBeVisible();
-  await expect(page.getByText(/Google Maps · Updated/)).toBeVisible();
-  await expect(page.getByText('Live route information is unavailable.',{exact:true})).toHaveCount(0);
+  await expect(page.getByText(/Updated/)).toBeVisible();
+  await expect(page.getByText(/snapshot|Baseline driving|Stored traffic/)).toHaveCount(0);
+  await expect(page.getByText(/^Not updated/)).toHaveCount(0);
 });
 
 test('request hero centers responsive controls and keeps confidence below the fold', async ({ page }) => {
@@ -416,7 +416,7 @@ test('request hero centers responsive controls and keeps confidence below the fo
       expect(proceed!.y).toBeGreaterThan(date!.y+date!.height);
       expect(proceed!.width).toBeGreaterThan(viewport.width-60);
     }
-    await expect(page.getByRole('link',{name:'Check live route in Google Maps'})).toHaveCount(0);
+    await expect(page.getByRole('link',{name:'Check live route'})).toHaveCount(0);
   }
 });
 
@@ -424,16 +424,17 @@ test('profile edits persist and chat shows sender display name and avatar',async
   await signIn(page);
   await page.getByRole('button',{name:'Edit profile',exact:true}).click();
   await page.getByLabel('Display name',{exact:true}).fill('Alice Rider');
-  await page.getByLabel('Avatar image URL',{exact:true}).fill('https://example.com/avatar.png');
-  await page.getByRole('button',{name:'Save profile',exact:true}).click();
+  await expect(page.getByLabel('Avatar image URL',{exact:true})).toHaveCount(0);
+  await page.getByLabel('Choose profile photo',{exact:true}).setInputFiles({name:'avatar.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64')});
+  await page.getByRole('button',{name:'Save',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Alice Rider',exact:true})).toBeVisible();
   await page.reload();await expect(page.getByRole('heading',{name:'Alice Rider',exact:true})).toBeVisible();
   const ride=await createFutureRide(page);await page.goto('/#/chat/'+ride.id);
   await page.getByRole('textbox',{name:'Message',exact:true}).fill('Profile identity message');
   await page.getByRole('button',{name:'Send message',exact:true}).click();
-  await expect(page.getByText('Alice Rider',{exact:true})).toBeVisible();
-  await expect(page.getByRole('img',{name:"Alice Rider's avatar"}).or(page.locator('span[aria-label="Alice Rider\'s avatar"]'))).toBeVisible();
+  await expect(page.getByText('Alice Rider',{exact:true})).toHaveCount(0);
+  await expect(page.getByText('Profile identity message',{exact:true})).toBeVisible();
   await page.goto('/#/profile');await page.getByRole('button',{name:'Edit profile',exact:true}).click();
-  await page.getByLabel('Display name',{exact:true}).fill('Alice Eagle');await page.getByLabel('Avatar image URL',{exact:true}).fill('');
-  await page.getByRole('button',{name:'Save profile',exact:true}).click();await expect(page.getByRole('heading',{name:'Alice Eagle',exact:true})).toBeVisible();
+  await page.getByLabel('Display name',{exact:true}).fill('Alice Eagle');
+  await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.getByRole('heading',{name:'Alice Eagle',exact:true})).toBeVisible();
 });

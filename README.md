@@ -484,10 +484,24 @@ Apply migration `007_profile_presentation.sql` with `npm run build` followed by
 and avatar-URL fields to PostgreSQL users; verified identity/email are unchanged.
 Profile edits use authenticated, same-origin `PATCH /api/auth/profile`.
 
-Avatars use an optional public HTTPS image URL entered in Profile, with initials
-when absent or the image fails. No uploads, Supabase Storage bucket, new secrets,
-or storage policies are required. Images are loaded by the viewer's browser from
-the linked host (with no referrer); availability depends on that host. Names and
-avatar URLs are joined into chat history from users, without per-message identity
-copies or additional polling. Discovery lists only future, non-cancelled rides
-with available capacity; full/past/cancelled records remain in history.
+Avatars are uploaded from the device photo/file picker. Run `supabase/avatars.sql`
+in your Supabase project's SQL Editor once before using uploads. This creates the
+public `avatars` bucket with a 2 MB limit, PNG/JPEG/WebP MIME restrictions, and
+policies restricting INSERT/SELECT/UPDATE to the signed-in user's stable
+`<auth.uid()>/avatar` object. Check that no existing broader policies grant writes
+to other users' objects. Public avatar images are readable by anyone with the URL.
+
+Express accepts authenticated, same-origin `POST /api/auth/profile/avatar` binary
+image uploads, validates file signatures/type and size, and uses the current user's
+Supabase JWT (including the existing refresh flow), never a service-role key.
+The saved URL uses the existing `users.avatar_url` column and a cache-version query
+parameter; replacement overwrites the same object. No new PostgreSQL migration or
+environment key is needed. Apply migration 007 if you have not already done so.
+
+Profile Save uploads the photo before saving the display name. If the later name
+save fails, the photo may already have been replaced; retry Save to finish.
+Cancel before Save discards the preview without uploading. Unsupported formats
+(including HEIC/SVG) should be exported to PNG/JPEG/WebP first. Failed image loads
+fall back to initials. Chat reads current profile references in its existing query;
+there is no additional polling. Discovery excludes full, past, and cancelled rides
+without removing their history.

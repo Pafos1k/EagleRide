@@ -1,4 +1,4 @@
-import UserAvatar from '../src/components/UserAvatar';
+import ChatMessages from '../src/components/ChatMessages';
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Send, ArrowLeft, Info, RefreshCw } from 'lucide-react';
@@ -92,24 +92,7 @@ const ChatView: React.FC = () => {
 
         {error && <p role="alert" className="text-red-700">{error}</p>}
         {!messages.length && <p className="text-center text-slate-500">No messages yet.</p>}
-        {messages.map((m) => (
-          <div key={m.id} className={`flex ${m.senderUserId === user?.id ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 ${
-              m.senderUserId === user?.id
-              ? 'bg-black text-white rounded-tr-none'
-              : 'bg-slate-100 text-slate-700 rounded-tl-none border border-slate-200'
-            }`}>
-              <div className="flex items-center gap-2 mb-2">
-                <UserAvatar name={m.senderName} url={m.senderAvatarUrl} />
-                <p className="text-xs font-bold">{m.senderName}</p>
-              </div>
-              <p className="text-xs sm:text-sm leading-relaxed">{m.body}</p>
-              <p className={`text-[10px] mt-1 text-right ${m.senderUserId === user?.id ? 'text-white/60' : 'text-slate-400'}`}>
-                {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </p>
-            </div>
-          </div>
-        ))}
+        <ChatMessages messages={messages} currentUserId={user?.id} />
       </div>
 
       {/* Input */}
