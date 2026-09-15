@@ -26,6 +26,6 @@ export default function SignIn() {
     {(error || callbackError || authError) && <p role="alert" className="text-red-700">{error || (callbackError === '403' ? 'A verified @bc.edu email account is required.' : callbackError ? 'Sign-in could not be completed. Please try again.' : authError)}</p>}
     {loading ? <p role="status">Checking sign-in...</p> : user ? <Link to={returnTo} className="underline">Continue as {user.fullName}</Link> : <button disabled={busy} onClick={signIn} className="w-full bg-black text-white py-3 rounded-xl font-bold">{busy ? 'Opening Google...' : 'Continue with Google'}</button>}
     {authError && <button className="block underline" onClick={async () => { try { await signOut(); } catch { /* Context displays the error and keeps retry available. */ } }}>Retry sign out</button>}
-    <Link className="block underline" to="/find">Browse rides without signing in</Link>
+    <Link className="block text-center underline" to="/find">Browse rides without signing in</Link>
   </div>;
 }

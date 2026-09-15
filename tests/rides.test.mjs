@@ -91,7 +91,7 @@ test('migrations work on an empty database and are repeatable', async () => {
   assert.equal(await count(), 0);
   assert.deepEqual((await db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")).rows.map(r => r.table_name), ['messages', 'ride_participants', 'ride_route_snapshots', 'rides', 'schema_migrations', 'users']);
   await migrate();
-  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '6');
+  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '7');
   assert.equal((await db.query("SELECT full_name FROM users WHERE id='u1'")).rows[0].full_name, 'Baldwin Eagle');
 });
 test('POST creates a persisted ride and host participation with server identity and timestamps', async () => {
@@ -277,7 +277,7 @@ test('auth: cookies contain Supabase tokens only, never Google tokens/user claim
   const me = await client.request('/api/auth/me');
   assert.equal(me.headers.get('cache-control'), 'private, no-store');
   const user = await me.json();
-  assert.deepEqual(Object.keys(user).sort(), ['bcEmail', 'createdAt', 'fullName', 'id']);
+  assert.deepEqual(Object.keys(user).sort(), ['avatarUrl', 'bcEmail', 'createdAt', 'fullName', 'id']);
 });
 test('auth: expired sessions refresh and rotate cookies; invalid access/refresh fail closed', async () => {
   const client = cookieClient(origin); await client.login();
@@ -647,4 +647,39 @@ test('snapshot endpoint is ride-specific, optional, and has no arbitrary-locatio
   assert.equal(snapshot.latestRefreshFailed, true);
   assert.deepEqual(await (await request({})).json(), snapshot);
   assert.equal((await fetch(origin + '/api/routes', { method: 'POST' })).status, 404);
+});
+
+test('discovery excludes past, cancelled and full rides while preserving history', async () => {
+  const host=await newActor(), guest=await newActor();
+  const live=await newRide(host), past=await newRide(host,{departureTime:new Date(Date.now()-60000).toISOString()}), full=await newRide(host,{seatsTotal:2}), cancelled=await newRide(host);
+  await operate(guest,full.id,'join');await operate(host,cancelled.id,'cancel');
+  const discovery=await (await fetch(origin+'/api/rides')).json();
+  assert.ok(discovery.some(r=>r.id===live.id));
+  for(const ride of [past,full,cancelled]){
+    assert.ok(!discovery.some(r=>r.id===ride.id));
+    assert.equal((await fetch(origin+'/api/rides/'+ride.id)).status,200);
+  }
+  const activity=await (await host.client.request('/api/rides/mine')).json();
+  for(const ride of [past,full,cancelled])assert.ok(activity.some(r=>r.id===ride.id));
+});
+test('profile updates only presentation, persists through identity sync, and chat joins current sender profile',async()=>{
+  const host=await newActor(), guest=await newActor(), ride=await newRide(host);
+  await operate(guest,ride.id,'join');
+  const update=(client,body,headers={})=>client.request('/api/auth/profile',{method:'PATCH',headers:{'Content-Type':'application/json',Origin:origin,...headers},body:JSON.stringify(body)});
+  const fields={fullName:'  Alex Rider  ',avatarUrl:'https://example.com/avatar.png'};
+  assert.equal((await update(cookieClient(origin),fields)).status,401);
+  assert.equal((await update(host.client,fields,{Origin:'https://evil.example'})).status,403);
+  for(const invalid of [{...fields,fullName:''},{...fields,fullName:'x'.repeat(81)},{...fields,fullName:'<script>'},{...fields,avatarUrl:'not a URL'},{...fields,avatarUrl:'javascript:alert(1)'},{...fields,avatarUrl:'http://example.com/a'},{...fields,avatarUrl:'https://user:secret@example.com/a'},{...fields,bcEmail:'fake@bc.edu'},{...fields,id:guest.user.id}])assert.equal((await update(host.client,invalid)).status,400);
+  assert.equal((await update(host.client,fields)).status,200);
+  const me=await (await host.client.request('/api/auth/me')).json();
+  assert.equal(me.fullName,'Alex Rider');assert.equal(me.avatarUrl,fields.avatarUrl);assert.equal(me.id,host.user.id);assert.equal(me.bcEmail,host.user.bcEmail);
+  assert.equal((await (await guest.client.request('/api/auth/me')).json()).fullName,guest.user.fullName);
+  const sent=await host.client.request('/api/rides/'+ride.id+'/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:'Hello with identity'})});assert.equal(sent.status,201);
+  let chat=await (await guest.client.request('/api/rides/'+ride.id+'/messages')).json();
+  assert.equal(chat.messages[0].senderName,'Alex Rider');assert.equal(chat.messages[0].senderAvatarUrl,fields.avatarUrl);
+  assert.equal((await update(host.client,{fullName:'Alex Updated',avatarUrl:null})).status,200);
+  chat=await (await guest.client.request('/api/rides/'+ride.id+'/messages')).json();
+  assert.equal(chat.messages[0].senderName,'Alex Updated');assert.equal(chat.messages[0].senderAvatarUrl,null);
+  const row=(await db.query('SELECT display_name,avatar_url,auth_subject,bc_email FROM users WHERE id=$1',[host.user.id])).rows[0];
+  assert.equal(row.display_name,'Alex Updated');assert.equal(row.bc_email,host.user.bcEmail);assert.ok(row.auth_subject);
 });

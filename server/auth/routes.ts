@@ -1,3 +1,4 @@
+import { profileInput } from '../../shared/profile';
 import { Router, type ErrorRequestHandler, type RequestHandler } from 'express';
 import { createPool } from '../db';
 import { appOrigin, authProvider, AuthFailure } from './provider';
@@ -43,6 +44,12 @@ export function authentication() {
   });
   router.get('/me', requireUser, (_req, res) => res.json(res.locals.user));
   router.get('/profile', requireUser, (_req, res) => res.json(res.locals.user));
+  router.patch('/profile', sameOrigin, requireUser, async (req, res) => {
+    const parsed = profileInput.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Enter a name (1–80 plain-text characters) and a valid HTTPS avatar URL, or leave the avatar blank.' });
+    await pool!.query('UPDATE users SET display_name=$1, avatar_url=$2 WHERE id=$3', [parsed.data.fullName, parsed.data.avatarUrl, res.locals.user.id]);
+    res.json({ ...res.locals.user, ...parsed.data });
+  });
   router.post('/logout', sameOrigin, async (req, res) => {
     try { await authProvider(req, res).logout(); }
     finally { const cookies = authCookies(req, res, appOrigin().protocol === 'https:'); cookies.clearSession(); cookies.clearPkce(); }

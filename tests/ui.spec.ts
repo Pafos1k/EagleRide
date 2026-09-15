@@ -419,3 +419,21 @@ test('request hero centers responsive controls and keeps confidence below the fo
     await expect(page.getByRole('link',{name:'Check live route in Google Maps'})).toHaveCount(0);
   }
 });
+
+test('profile edits persist and chat shows sender display name and avatar',async({page})=>{
+  await signIn(page);
+  await page.getByRole('button',{name:'Edit profile',exact:true}).click();
+  await page.getByLabel('Display name',{exact:true}).fill('Alice Rider');
+  await page.getByLabel('Avatar image URL',{exact:true}).fill('https://example.com/avatar.png');
+  await page.getByRole('button',{name:'Save profile',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Alice Rider',exact:true})).toBeVisible();
+  await page.reload();await expect(page.getByRole('heading',{name:'Alice Rider',exact:true})).toBeVisible();
+  const ride=await createFutureRide(page);await page.goto('/#/chat/'+ride.id);
+  await page.getByRole('textbox',{name:'Message',exact:true}).fill('Profile identity message');
+  await page.getByRole('button',{name:'Send message',exact:true}).click();
+  await expect(page.getByText('Alice Rider',{exact:true})).toBeVisible();
+  await expect(page.getByRole('img',{name:"Alice Rider's avatar"}).or(page.locator('span[aria-label="Alice Rider\'s avatar"]'))).toBeVisible();
+  await page.goto('/#/profile');await page.getByRole('button',{name:'Edit profile',exact:true}).click();
+  await page.getByLabel('Display name',{exact:true}).fill('Alice Eagle');await page.getByLabel('Avatar image URL',{exact:true}).fill('');
+  await page.getByRole('button',{name:'Save profile',exact:true}).click();await expect(page.getByRole('heading',{name:'Alice Eagle',exact:true})).toBeVisible();
+});

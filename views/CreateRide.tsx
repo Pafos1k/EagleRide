@@ -277,7 +277,7 @@ const CreateRide: React.FC = () => {
         className="w-full min-h-[calc(100svh-80px)] px-5 sm:px-8 py-16 sm:py-24 flex flex-col items-center justify-center relative z-10"
       >
         <div className="w-full max-w-[1040px] flex flex-col items-center">
-          <h1 className="text-4xl sm:text-5xl lg:text-[64px] font-bold leading-[1.1] mb-8 sm:mb-10 lg:mb-10 tracking-tight text-black text-center">Request a ride</h1>
+          <h1 className="text-[44px] sm:text-5xl lg:text-[64px] font-bold leading-[1.1] mb-8 sm:mb-10 lg:mb-10 tracking-tight text-black text-center">Request a ride</h1>
 
           {error && <p role="alert" className="mb-4 text-sm text-red-700">{error}</p>}
           {busy && <p role="status" className="mb-4 text-sm text-neutral-500">Please wait...</p>}

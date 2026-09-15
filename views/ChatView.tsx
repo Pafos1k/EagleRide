@@ -1,3 +1,4 @@
+import UserAvatar from '../src/components/UserAvatar';
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Send, ArrowLeft, Info, RefreshCw } from 'lucide-react';
@@ -59,7 +60,7 @@ const ChatView: React.FC = () => {
   if (!chat || !ride) return <div className="p-8 text-center"><p role="alert">{error || 'Chat unavailable.'}</p><button onClick={() => setReload(v => v + 1)} className="underline">Retry</button></div>;
 
   return (
-    <div className="max-w-4xl mx-auto h-[calc(100vh-130px)] sm:h-[calc(100vh-160px)] flex flex-col bg-white border border-slate-200 rounded-2xl sm:rounded-3xl overflow-hidden shadow-sm m-2 sm:m-0">
+    <div className="max-w-4xl mx-auto h-[calc(100vh-130px)] sm:h-[calc(100vh-160px)] flex flex-col bg-white border border-slate-200 rounded-2xl sm:rounded-3xl overflow-hidden shadow-sm my-2 sm:my-6 w-[calc(100%-16px)]">
       {/* Header */}
       <div className="bg-white border-b border-slate-100 p-3 sm:p-4 flex items-center justify-between">
         <div className="flex items-center space-x-3 sm:space-x-4 min-w-0">
@@ -82,7 +83,7 @@ const ChatView: React.FC = () => {
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
         <div className="flex flex-col items-center">
           <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 sm:p-4 text-center max-w-sm">
-            <Info size={16} className="text-bc-maroon mx-auto mb-1.5 sm:mb-2" />
+            <Info size={16} className="text-neutral-700 mx-auto mb-1.5 sm:mb-2" />
             <p className="text-xs text-slate-500 font-medium">
               {chat.cancelledAt ? 'This ride is cancelled. Chat history is read-only.' : 'Coordinate your pickup here. Refresh to check for new messages.'}
             </p>
@@ -95,12 +96,13 @@ const ChatView: React.FC = () => {
           <div key={m.id} className={`flex ${m.senderUserId === user?.id ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 ${
               m.senderUserId === user?.id
-              ? 'bg-bc-maroon text-white rounded-tr-none shadow-md shadow-bc-maroon/10' 
+              ? 'bg-black text-white rounded-tr-none'
               : 'bg-slate-100 text-slate-700 rounded-tl-none border border-slate-200'
             }`}>
-              {m.senderUserId !== user?.id && (
-                <p className="text-[10px] font-bold text-bc-maroon mb-1 uppercase tracking-wider">{m.senderName}</p>
-              )}
+              <div className="flex items-center gap-2 mb-2">
+                <UserAvatar name={m.senderName} url={m.senderAvatarUrl} />
+                <p className="text-xs font-bold">{m.senderName}</p>
+              </div>
               <p className="text-xs sm:text-sm leading-relaxed">{m.body}</p>
               <p className={`text-[10px] mt-1 text-right ${m.senderUserId === user?.id ? 'text-white/60' : 'text-slate-400'}`}>
                 {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -119,7 +121,7 @@ const ChatView: React.FC = () => {
             maxLength={2000}
             disabled={busy || !!chat.cancelledAt}
             placeholder="Type your message..."
-            className="w-full bg-white border border-slate-200 rounded-xl sm:rounded-2xl py-2.5 sm:py-3 pl-3.5 sm:pl-4 pr-12 sm:pr-14 font-medium text-slate-700 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-bc-maroon/20 focus:border-bc-maroon transition-all"
+            className="w-full bg-white border border-slate-200 rounded-xl sm:rounded-2xl py-2.5 sm:py-3 pl-3.5 sm:pl-4 pr-12 sm:pr-14 font-medium text-slate-700 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300 focus:border-black transition-all"
             value={input}
             onChange={(e) => setInput(e.target.value)}
           />
@@ -127,7 +129,7 @@ const ChatView: React.FC = () => {
             type="submit"
             aria-label="Send message"
             disabled={busy || !!chat.cancelledAt || !input.trim()}
-            className="absolute right-1.5 sm:right-2 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-10 sm:h-10 bg-bc-maroon text-white rounded-lg sm:rounded-xl flex items-center justify-center hover:bg-red-800 transition-all shadow-lg shadow-bc-maroon/20"
+            className="absolute right-1.5 sm:right-2 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-10 sm:h-10 bg-black text-white rounded-lg sm:rounded-xl flex items-center justify-center hover:bg-neutral-800 transition-all "
           >
             <Send size={16} className="sm:w-[18px] sm:h-[18px]" />
           </button>

@@ -18,7 +18,8 @@ function toRide(row: Record<string, any>): PersistedRide {
   };
 }
 export async function listRides(pool: Pool): Promise<PersistedRide[]> {
-  const result = await pool.query(`${selectRides} WHERE r.cancelled_at IS NULL ORDER BY r.departure_at, r.id`);
+  const result = await pool.query(`${selectRides} WHERE r.cancelled_at IS NULL AND r.departure_at > now()
+    AND (SELECT count(*) FROM ride_participants active WHERE active.ride_id=r.id AND active.left_at IS NULL) < r.seats_total ORDER BY r.departure_at, r.id`);
   return result.rows.map(toRide);
 }
 export async function getRide(db: Pool | PoolClient, id: string): Promise<PersistedRide | null> {

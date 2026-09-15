@@ -476,3 +476,18 @@ traffic. There is no persisted user-specific snapshot or browser-local authority
 Run npm run test:snapshots with TEST_DATABASE_URL for deterministic PostgreSQL
 milestone, concurrency and failure tests, plus the existing routing/server/database
 and browser suites. Apply migration 006 to the application database before use.
+
+### Profile presentation and discovery
+
+Apply migration `007_profile_presentation.sql` with `npm run build` followed by
+`npm run db:migrate` before starting this version. It adds nullable display-name
+and avatar-URL fields to PostgreSQL users; verified identity/email are unchanged.
+Profile edits use authenticated, same-origin `PATCH /api/auth/profile`.
+
+Avatars use an optional public HTTPS image URL entered in Profile, with initials
+when absent or the image fails. No uploads, Supabase Storage bucket, new secrets,
+or storage policies are required. Images are loaded by the viewer's browser from
+the linked host (with no referrer); availability depends on that host. Names and
+avatar URLs are joined into chat history from users, without per-message identity
+copies or additional polling. Discovery lists only future, non-cancelled rides
+with available capacity; full/past/cancelled records remain in history.

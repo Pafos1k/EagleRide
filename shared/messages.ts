@@ -3,6 +3,7 @@ export interface RideMessage {
   rideId: string;
   senderUserId: string;
   senderName: string;
+  senderAvatarUrl: string | null;
   body: string;
   createdAt: string;
 }
