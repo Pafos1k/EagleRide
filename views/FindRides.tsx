@@ -1,18 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { 
-  Filter, 
-  MapPin, 
-  Calendar, 
-  Users, 
-  Search,
-  ChevronDown,
-  Circle,
-  Square,
-  ChevronRight,
-  Clock
-} from 'lucide-react';
+import { Filter, MapPin, ChevronRight } from 'lucide-react';
+import RideSearchSchedule from '../src/components/RideSearchSchedule';
+import {localDay,searchWindow} from '../src/lib/rideSearchSchedule';
 import { listRides } from '../src/api/rides';
 import { locationLabel, rideCategory, type PersistedRide } from '../shared/rides';
 
@@ -21,7 +12,7 @@ const FindRides: React.FC = () => {
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   const [rides, setRides] = useState<PersistedRide[]>([]);
-  const [fields,setFields]=useState({from:'',to:'',date:'',earliest:'',latest:''});
+  const [fields,setFields]=useState({from:'',to:'',date:localDay(new Date()),earliest:'',latest:''});
   const [search,setSearch]=useState<Record<string,string>>({});
 
   useEffect(() => {
@@ -52,18 +43,13 @@ const FindRides: React.FC = () => {
         <form className="w-full space-y-3" onSubmit={event=>{
           event.preventDefault();const query:Record<string,string>={};
           if(fields.from.trim())query.from=fields.from.trim();if(fields.to.trim())query.to=fields.to.trim();
-          if(fields.date){
-            const start=new Date(fields.date+'T'+(fields.earliest || '00:00'));
-            const end=new Date(fields.date+'T'+(fields.latest || '00:00'));
-            if(!fields.latest)end.setDate(end.getDate()+1);else end.setMinutes(end.getMinutes()+1);
-            if(!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end<=start){setError('Choose an increasing departure window.');return;}
-            query.after=start.toISOString();query.before=end.toISOString();
-          }else if(fields.earliest || fields.latest){setError('Choose a date for the departure window.');return;}
+          try { Object.assign(query,searchWindow(fields.date,fields.earliest,fields.latest)); }
+          catch(error){setError(error instanceof Error?error.message:'Choose a valid departure window.');return;}
           setSearch(query);
         }}>
           <div className="grid sm:grid-cols-2 gap-3">{(['from','to'] as const).map(key=><label key={key} className="text-left text-sm">{key==='from'?'From':'To'}<input list="ride-locations" className="w-full bg-neutral-100 rounded-xl p-3 mt-1" value={fields[key]} onChange={e=>setFields({...fields,[key]:e.target.value})}/></label>)}</div>
           <datalist id="ride-locations">{['Boston College','Newton Campus','Logan Airport (BOS)','South Station','177 Huntington Ave'].map(name=><option key={name} value={name}/>)}</datalist>
-          <div className="grid sm:grid-cols-3 gap-3">{([['date','Date','date'],['earliest','Earliest departure','time'],['latest','Latest departure','time']] as const).map(([key,label,type])=><label key={key} className="text-left text-sm">{label}<input type={type} className="w-full min-w-0 bg-neutral-100 rounded-xl p-3 mt-1" value={fields[key]} onChange={e=>setFields({...fields,[key]:e.target.value})}/></label>)}</div>
+          <RideSearchSchedule value={fields} onChange={value=>setFields({...fields,...value})}/>
           <button className="w-full bg-black text-white rounded-xl py-3 font-bold">Search rides</button>
         </form>
       </div>
@@ -141,7 +127,7 @@ const FindRides: React.FC = () => {
             <h3 className="text-xl font-bold text-neutral-800">No Matches Found</h3>
             <p className="text-neutral-500 max-w-xs mx-auto mt-2 mb-8 text-sm">We couldn't find any rides for this destination. Try a broader search or offer your own ride!</p>
             <button 
-              onClick={() => (setFields({from:'',to:'',date:'',earliest:'',latest:''}),setSearch({}))}
+              onClick={() => (setFields({from:'',to:'',date:localDay(new Date()),earliest:'',latest:''}),setSearch({}),setReload(value=>value+1))}
               className="bg-black text-white px-8 py-3 rounded-xl font-bold text-sm hover:bg-neutral-800 transition-colors"
             >
               Reset All Filters

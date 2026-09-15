@@ -497,10 +497,10 @@ test('public trip search uses origin, destination and departure window',async({p
   await page.goto('/#/find');
   await page.getByLabel('From',{exact:true}).fill('Browser operations test');
   await page.getByLabel('To',{exact:true}).fill('Boston College');
-  const day=await page.evaluate(value=>{const d=new Date(value);return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');},ride.departureTime);
-  await page.getByLabel('Date',{exact:true}).fill(day);
-  await page.getByLabel('Earliest departure').fill('00:00');
-  await page.getByLabel('Latest departure').fill('23:59');
+  await page.getByRole('button',{name:'Tomorrow',exact:true}).click();
+  await page.getByRole('button',{name:'Custom',exact:true}).click();
+  await page.getByRole('combobox',{name:'From time',exact:true}).selectOption('00:00');
+  await page.getByRole('combobox',{name:'To time',exact:true}).selectOption('23:59');
   await page.getByRole('button',{name:'Search rides'}).click();
   await expect(page.locator(`a[href="#/ride/${ride.id}"]`)).toBeVisible();
   await page.getByLabel('From',{exact:true}).fill('No matching location');
