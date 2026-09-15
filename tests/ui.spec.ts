@@ -60,11 +60,11 @@ test('ride creation is visible in a separate browser context without local ride 
     await pageA.getByText('Logan Airport (BOS)', { exact: true }).click();
     await pageA.getByRole('button', { name: 'C', exact: true }).click();
     await pageA.getByRole('button', { name: 'Continue', exact: true }).click();
-    await expect(pageA.getByRole('heading', { name: /^(Similar rides found|Confirm your ride)$/ })).toBeVisible();
+    await expect(pageA.getByRole('heading', { name: 'Similar rides found' }).or(pageA.getByRole('button', {name:'Post Ride',exact:true}))).toBeVisible();
     if (await pageA.getByRole('heading', { name: 'Similar rides found' }).isVisible()) {
       await pageA.getByRole('button', { name: 'Create my own ride' }).click();
     }
-    await expect(pageA.getByRole('heading', { name: 'Confirm your ride' })).toBeVisible();
+    await expect(pageA.getByRole('button', { name: 'Post Ride', exact: true })).toBeVisible();
     await pageA.getByRole('button', { name: 'Post Ride', exact: true }).click();
     await expect(pageA).toHaveURL(/#\/ride\/[a-f0-9-]+$/);
     const id = pageA.url().split('/').at(-1)!;
@@ -324,7 +324,13 @@ test('routing unavailable does not block ride creation and never displays fabric
   await expect(page.getByText(/Estimated fare|Available on Ride Detail|Split 4 ways/)).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Check live route in Google Maps' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Confirm your ride' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Post Ride', exact: true })).toBeVisible();
+  await expect(page.getByText('Confirm your ride',{exact:true})).toHaveCount(0);
+  await expect(page.getByPlaceholder('Pickup location')).toHaveValue('Unique custom pickup');
+  await expect(page.getByPlaceholder('Dropoff location')).toHaveValue('Unique custom destination');
+  await page.getByRole('button',{name:'Edit details',exact:true}).click();
+  await expect(page.getByPlaceholder('Pickup location')).toHaveValue('Unique custom pickup');
+  await page.getByRole('button',{name:'Continue',exact:true}).click();
   const saved = page.waitForResponse(response => response.url().endsWith('/api/rides') && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Post Ride', exact: true }).click();
   const response = await saved;
@@ -357,7 +363,7 @@ test('Create, Find and Activity never request routing; confirmation has no route
   await page.getByPlaceholder('Dropoff location').fill('No routing destination');
   await page.getByRole('heading', {name:'Request a ride',exact:true}).click();
   await page.getByRole('button', {name:'Continue',exact:true}).click();
-  await expect(page.getByRole('heading', {name:'Confirm your ride'})).toBeVisible();
+  await expect(page.getByRole('button', {name:'Post Ride',exact:true})).toBeVisible();
   await expect(page.getByRole('link',{name:'Check live route in Google Maps'})).toHaveCount(0);
   await expect(page.getByText(/Estimated fare|Available on Ride Detail|Split 4 ways/)).toHaveCount(0);
   for(const route of ['/find','/dashboard']){
@@ -394,6 +400,8 @@ test('request hero centers responsive controls and keeps confidence below the fo
     expect(Math.abs(date!.y-time!.y)).toBeLessThan(5);
     expect(Math.abs(date!.width-time!.width)).toBeLessThan(2);
     expect(date!.height).toBe(viewport.width < 768 ? 52 : 44);
+    await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();
+    await expect(page.getByRole('button',{name:'Continue',exact:true})).toHaveCSS('color','rgb(255, 255, 255)');
     await expect(page.getByRole('button',{name:'Continue',exact:true})).toHaveCSS('background-color','rgb(0, 0, 0)');
     const confidence=await page.getByText('Ride with confidence',{exact:true}).boundingBox();
     expect(pickup).not.toBeNull();expect(dropoff).not.toBeNull();expect(proceed).not.toBeNull();

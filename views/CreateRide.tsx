@@ -485,7 +485,7 @@ const CreateRide: React.FC = () => {
               onClick={handleContinue}
               disabled={busy || !pickup || !destination || ((pickup.includes('Airport') || destination.includes('Airport')) && !terminal)}
               className={`w-full max-md:h-[60px] px-8 py-3.5 sm:py-4 rounded-xl font-bold text-[17px] sm:text-[19px] transition-all active:scale-[0.98] ${
-                pickup && destination && (!(pickup.includes('Airport') || destination.includes('Airport')) || terminal) ? 'bg-black text-white' : 'bg-black text-neutral-400 cursor-not-allowed'
+                pickup && destination && (!(pickup.includes('Airport') || destination.includes('Airport')) || terminal) ? 'bg-black text-white' : 'bg-black text-white cursor-not-allowed'
               }`}
             >
               Continue
@@ -544,31 +544,6 @@ const CreateRide: React.FC = () => {
 
           return (
             <div className="mt-8 sm:mt-12 max-w-lg w-full animate-slide">
-              <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Confirm your ride</h2>
-              <div className="bg-neutral-50 p-4 sm:p-5 rounded-2xl border border-neutral-100 space-y-3 mb-6 sm:mb-8 text-sm sm:text-base">
-                <div className="flex justify-between items-center">
-                  <span className="text-neutral-500 font-medium">From</span>
-                  <span className="font-bold text-right ml-2 truncate">{pickup}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-neutral-500 font-medium">To</span>
-                  <span className="font-bold text-right ml-2 truncate">{destination}</span>
-                </div>
-                {(pickup.includes('Airport') || destination.includes('Airport')) && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-neutral-500 font-medium">Terminal</span>
-                    <span className="font-bold">{terminal}</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center">
-                  <span className="text-neutral-500 font-medium">Time</span>
-                  <span className="font-bold">{formatDateLabel(selectedDate)}, {selectedTime}</span>
-                </div>
-
-
-
-
-              </div>
               <button 
                 onClick={handleCreateRide}
                 disabled={busy}
