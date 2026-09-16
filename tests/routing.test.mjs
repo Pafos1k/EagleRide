@@ -139,3 +139,15 @@ test('Ride Detail disclaimer uses requested cost/safety copy with no placeholder
   assert.match(footer,/Do not rely on EagleRide for time-critical transportation, including flights or other scheduled departures/);
   assert.doesNotMatch(footer,/fare|Terms|Privacy|coming soon/);
 });
+
+test('presentation cleanup removes Ride Detail placeholders and keeps chat guidance compact',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const detail=await readFile(new URL('../views/RideDetail.tsx',import.meta.url),'utf8');
+  assert.doesNotMatch(detail,/Editing is not available yet|>Luggage<|ride\.luggageType|Briefcase/);
+  assert.match(detail,/Cancel ride/);assert.match(detail,/You are hosting this ride/);assert.match(detail,/Open ride chat/);
+  assert.match(detail,/className="flex mb-6 sm:mb-8 border-t/);
+  const chat=await readFile(new URL('../views/ChatView.tsx',import.meta.url),'utf8');
+  assert.match(chat,/<p className="text-xs text-neutral-500 text-center">Coordinate your pickup and luggage details here\.<\/p>/);
+  assert.doesNotMatch(chat,/connected\?'Connected'|Messages update automatically|<Info|text-center max-w-sm/);
+  assert.match(chat,/This ride is cancelled\. Chat history is read-only\./);
+});

@@ -8,9 +8,8 @@ export default function FindRideCard({ride,currentUserId,search}:{ride:Persisted
   const note=campusMatchNote(ride,search);
   return (
     <Link to={`/ride/${ride.id}`} className="group">
-      <div className={`bg-white rounded-2xl overflow-hidden transition-all ${owned ? 'border-2 border-neutral-800 hover:border-black group-focus-visible:border-black' : 'border border-neutral-200 hover:border-black group-focus-visible:border-black'}`}>
+      <div className="bg-white rounded-2xl overflow-hidden transition-all border-2 border-neutral-800 hover:border-black group-focus-visible:border-black">
         
-        {owned && <p className="px-3.5 sm:px-6 pt-2 text-xs font-medium text-neutral-600">Your ride</p>}
         {/* Top Section: Departure - Destination - People - Arrow */}
         <div className="p-3.5 sm:p-6 flex items-center justify-between gap-2 sm:gap-4">
           
@@ -45,6 +44,7 @@ export default function FindRideCard({ride,currentUserId,search}:{ride:Persisted
               <span className="font-bold text-neutral-400 text-[9px] sm:text-[10px] uppercase tracking-wider">
                 {ride.cancelledAt ? 'Cancelled' : rideCategory(ride) === 'past' ? 'Past' : ride.seatsTaken >= ride.seatsTotal ? 'Full' : 'View / Join'}
               </span>
+              <div className="h-5 flex items-center justify-end">{owned && <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[8px] sm:text-[9px] leading-none font-semibold tracking-wide text-neutral-700">HOSTING</span>}</div>
             </div>
           </div>
 
@@ -54,12 +54,12 @@ export default function FindRideCard({ride,currentUserId,search}:{ride:Persisted
           </div>
         </div>
 
-        {note && <p className="px-3.5 sm:px-6 pb-2 text-xs text-neutral-500">{note}</p>}
         {/* Bottom Section: Origin */}
         <div className="bg-neutral-200 border-t border-neutral-300 py-1.5 sm:py-2 px-3 sm:px-6 flex items-center justify-center">
           <div className="flex items-center text-neutral-500 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest truncate">
             <MapPin size={10} className="mr-1 shrink-0" />
             <span className="truncate">FROM: {locationLabel(ride.origin)}</span>
+            {note && <span title={note} aria-label={note} className="ml-2 shrink-0 normal-case font-medium tracking-normal">· Nearby campus</span>}
           </div>
         </div>
 

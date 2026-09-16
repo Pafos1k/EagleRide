@@ -13,10 +13,13 @@ test('date/time visibility requires two valid locations and handles clearing/inv
     assert.equal(hasValidSearchLocations(from,to),expected);
   }
 });
-test('only hosted cards receive the darker thicker border and Your ride label',()=>{
-  const owned=render('host');assert.match(owned,/Your ride/);assert.match(owned,/border-2 border-neutral-800/);assert.match(owned,/bg-white/);assert.match(owned,/hover:border-black/);
-  for(const user of ['other',undefined]){
-    const html=render(user);assert.doesNotMatch(html,/Your ride|border-2 border-neutral-800/);assert.match(html,/border border-neutral-200/);assert.match(html,/bg-white/);
+test('all cards share border and layout classes; only hosted cards show the HOSTING badge',()=>{
+  const owned=render('host');assert.match(owned,/HOSTING/);assert.doesNotMatch(owned,/Your ride/);
+  for(const user of ['host','other',undefined]){
+    const html=render(user);assert.match(html,/border-2 border-neutral-800/);assert.match(html,/bg-white/);assert.match(html,/hover:border-black/);assert.match(html,/h-5 flex items-center justify-end/);
+    if(user!=='host')assert.doesNotMatch(html,/HOSTING|Your ride/);
+    const cardClasses=html.match(/<a[^>]*><div class="([^"]+)"/)[1];
+    assert.equal(cardClasses,owned.match(/<a[^>]*><div class="([^"]+)"/)[1]);
   }
 });
 test('campus indicator only describes results added by flexible matching at the same endpoint',()=>{
@@ -34,5 +37,5 @@ test('cards preserve actual locations without large campus headings; expanded ma
   const normal=render('other',{from:'Boston College',nearbyCampuses:'true'});
   assert.match(normal,/FROM: Boston College/);assert.match(normal,/Logan Airport \(BOS\) \(C\)/);assert.doesNotMatch(normal,/Pickup:|Dropoff:|Nearby campus/);
   const expanded=render('other',{from:'Newton Campus',nearbyCampuses:'true'});
-  assert.match(expanded,/text-xs text-neutral-500">Nearby campus pickup:/);assert.match(expanded,/FROM: Boston College/);
+  assert.match(expanded,/aria-label="Nearby campus pickup:/);assert.match(expanded,/FROM: Boston College/);
 });

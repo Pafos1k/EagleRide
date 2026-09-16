@@ -510,7 +510,7 @@ test('public trip search uses origin, destination and departure window',async({p
   await page.getByRole('combobox',{name:'To time',exact:true}).selectOption('23:59');
   await page.getByRole('button',{name:'Search rides'}).click();
   await expect(page.locator(`a[href="#/ride/${ride.id}"]`)).toBeVisible();
-  await expect(page.locator(`a[href="#/ride/${ride.id}"]`).getByText('Your ride',{exact:true})).toBeVisible();
+  await expect(page.locator(`a[href="#/ride/${ride.id}"]`).getByText('HOSTING',{exact:true})).toBeVisible();
   await page.getByLabel('From',{exact:true}).fill('No matching location');
   await page.getByRole('button',{name:'Search rides'}).click();
   await expect(page.locator(`a[href="#/ride/${ride.id}"]`)).toHaveCount(0);
@@ -523,7 +523,8 @@ test('chat synchronizes messages, reactions and deletion across participants and
     await signIn(host);const ride=await createFutureRide(host);await signIn(guest,'bob');
     expect((await guest.request.post('/api/rides/'+ride.id+'/join',{headers:{Origin:'http://127.0.0.1:3100'}})).status()).toBe(200);
     await host.goto('/#/chat/'+ride.id);await guest.goto('/#/chat/'+ride.id);
-    await expect(guest.getByText('Connected',{exact:true})).toBeVisible();
+    await expect(guest.getByRole('textbox',{name:'Message',exact:true})).toBeVisible();
+    await expect(guest.getByText('Connected',{exact:true})).toHaveCount(0);
     await host.getByRole('textbox',{name:'Message',exact:true}).fill('Realtime browser hello');
     await host.getByRole('button',{name:'Send message'}).click();
     await expect(guest.getByText('Realtime browser hello',{exact:true})).toBeVisible();

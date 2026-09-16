@@ -1,7 +1,7 @@
 import ChatMessages from '../src/components/ChatMessages';
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, ArrowLeft, Info } from 'lucide-react';
+import { Send, ArrowLeft } from 'lucide-react';
 import { getChat, getRide, sendMessage, deleteMessage, reactMessage, ApiError } from '../src/api/rides';
 import { useAuth } from '../src/auth/AuthProvider';
 import { locationLabel, type PersistedRide } from '../shared/rides';
@@ -93,19 +93,12 @@ const ChatView: React.FC = () => {
             </p>
           </div>
         </div>
-        <span className="text-xs text-neutral-500" role="status">{connected?'Connected':'Reconnecting…'}</span>
       </div>
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
-        <div className="flex flex-col items-center">
-          <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 sm:p-4 text-center max-w-sm">
-            <Info size={16} className="text-neutral-700 mx-auto mb-1.5 sm:mb-2" />
-            <p className="text-xs text-slate-500 font-medium">
-              {chat.cancelledAt ? 'This ride is cancelled. Chat history is read-only.' : 'Coordinate your pickup here. Messages update automatically. Tap or hold a message for reactions and actions.'}
-            </p>
-          </div>
-        </div>
+        <p className="text-xs text-neutral-500 text-center">Coordinate your pickup and luggage details here.</p>
+        {chat.cancelledAt && <p className="text-xs text-neutral-500 text-center">This ride is cancelled. Chat history is read-only.</p>}
 
         {error && <p role="alert" className="text-red-700">{error}</p>}
         {!messages.length && <p className="text-center text-slate-500">No messages yet.</p>}
