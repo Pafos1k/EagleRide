@@ -495,16 +495,22 @@ test('sign in centers BC requirement and preserves anonymous browsing on both vi
 test('public trip search uses origin, destination and departure window',async({page})=>{
   await signIn(page); const ride=await createFutureRide(page);
   await page.goto('/#/find');
-  await page.getByLabel('From',{exact:true}).fill('Browser operations test');
-  await page.getByLabel('To',{exact:true}).fill('Boston College');
+  await expect(page.getByRole('button',{name:'Filters',exact:true})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Tomorrow',exact:true})).toHaveCount(0);
-  await page.getByRole('button',{name:'Filters',exact:true}).click();
+  await page.getByLabel('From',{exact:true}).fill('Browser operations test');
+  await expect(page.getByRole('button',{name:'Tomorrow',exact:true})).toHaveCount(0);
+  await page.getByLabel('To',{exact:true}).fill('Boston College');
+  await expect(page.getByRole('button',{name:'Tomorrow',exact:true})).toBeVisible();
+  await page.getByLabel('To',{exact:true}).fill('   ');
+  await expect(page.getByRole('button',{name:'Tomorrow',exact:true})).toHaveCount(0);
+  await page.getByLabel('To',{exact:true}).fill('Boston College');
   await page.getByRole('button',{name:'Tomorrow',exact:true}).click();
   await page.getByRole('button',{name:'Custom',exact:true}).click();
   await page.getByRole('combobox',{name:'From time',exact:true}).selectOption('00:00');
   await page.getByRole('combobox',{name:'To time',exact:true}).selectOption('23:59');
   await page.getByRole('button',{name:'Search rides'}).click();
   await expect(page.locator(`a[href="#/ride/${ride.id}"]`)).toBeVisible();
+  await expect(page.locator(`a[href="#/ride/${ride.id}"]`).getByText('Your ride',{exact:true})).toBeVisible();
   await page.getByLabel('From',{exact:true}).fill('No matching location');
   await page.getByRole('button',{name:'Search rides'}).click();
   await expect(page.locator(`a[href="#/ride/${ride.id}"]`)).toHaveCount(0);

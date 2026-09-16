@@ -43,13 +43,14 @@ test('normal search shows quick choices and hides native date/time inputs and cu
   assert.match(html,/aria-pressed="true"/);assert.match(html,/Entire selected day/);
 });
 
-test('collapsed initial search has no date/time filtering and retains From/To',async()=>{
+test('initial search has no filter toggle or date/time controls and retains From/To',async()=>{
   const {buildRideSearch}=await import('../src/lib/rideSearchSchedule.ts');
   const fields={from:' Newton Campus ',to:'Logan Airport (BOS)',date:'2026-09-16',earliest:'',latest:'',periods:[],custom:false};
   assert.deepEqual(buildRideSearch(fields,false,false),{from:'Newton Campus',to:'Logan Airport (BOS)'});
   const {MemoryRouter}=await import('react-router-dom');const {default:FindRides}=await import('../views/FindRides.tsx');
-  const html=renderToStaticMarkup(React.createElement(MemoryRouter,null,React.createElement(FindRides)));
-  assert.match(html,/Filters/);assert.match(html,/aria-expanded="false"/);assert.doesNotMatch(html,/Choose date|Morning|Custom|Entire selected day/);
+  const {AuthProvider}=await import('../src/auth/AuthProvider.tsx');
+  const html=renderToStaticMarkup(React.createElement(MemoryRouter,null,React.createElement(AuthProvider,null,React.createElement(FindRides))));
+  assert.match(html,/Search rides/);assert.doesNotMatch(html,/Filters|aria-expanded|Choose date|Morning|Custom|Entire selected day/);
 });
 test('multi-select keeps disjoint windows, custom is exclusive, and summaries retain selection',async()=>{
   const {buildRideSearch,scheduleSummary}=await import('../src/lib/rideSearchSchedule.ts');
