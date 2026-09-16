@@ -22,7 +22,7 @@ test('existing hash routes render without application errors', async ({ page }) 
   // External maps/fonts are not required to verify application navigation.
   await page.route(/https:\/\/(maps\.google\.com|fonts\.googleapis\.com|fonts\.gstatic\.com)/, route => route.abort());
   for (const [route, heading] of [
-    ['/', 'Request a ride'], ['/create', 'Request a ride'], ['/find', 'Find a Ride'],
+    ['/', 'Plan a ride'], ['/create', 'Plan a ride'], ['/find', 'Find a Ride'],
     ['/dashboard', 'Ready to fly, Alice?'], ['/profile', 'Alice Eagle'],
     ['/about', 'EagleRide'], [`/ride/${ride.id}`, 'To Logan Airport (BOS) (C)'],
   ]) {
@@ -106,7 +106,7 @@ test('ride loading failures and not-found states are visible', async ({ page }) 
 
 test('authentication protects creation and shows real identity without browser tokens', async ({ page }) => {
   await page.goto('/#/create');
-  await expect(page.getByRole('heading', { name: 'Request a ride', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plan a ride', exact: true })).toBeVisible();
   await expect(page.getByPlaceholder('Pickup location')).toBeVisible();
   await signIn(page);
   await expect(page.getByText('alice@bc.edu', { exact: true })).toBeVisible();
@@ -171,20 +171,20 @@ async function createFutureRide(page: Page) {
 }
 test('public Home, About, list and details stay public; create preserves its return destination', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Request a ride', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plan a ride', exact: true })).toBeVisible();
   // Home is the request form; continuing still requires authentication.
   await page.getByPlaceholder('Pickup location').fill('Newton Campus');
   await page.getByPlaceholder('Dropoff location').fill('Boston College');
-  await page.getByRole('heading', { name: 'Request a ride', exact: true }).click();
+  await page.getByRole('heading', { name: 'Plan a ride', exact: true }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page).toHaveURL(/signin\?returnTo=%2Fcreate/);
   await page.request.post('http://127.0.0.1:3101/__test/select-user', { data: { user: 'alice' } });
   await page.getByRole('button', { name: 'Continue with Google' }).click();
-  await expect(page.getByRole('heading', { name: 'Request a ride', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plan a ride', exact: true })).toBeVisible();
   const ride = await createFutureRide(page);
   await page.goto('/#/profile'); await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
-  for (const [route, heading] of [['/', 'Request a ride'], ['/about', 'EagleRide'], ['/find', 'Find a Ride'], ['/ride/' + ride.id, 'To Boston College']]) {
+  for (const [route, heading] of [['/', 'Plan a ride'], ['/about', 'EagleRide'], ['/find', 'Find a Ride'], ['/ride/' + ride.id, 'To Boston College']]) {
     await page.goto('/#' + route);
     await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
   }
@@ -238,7 +238,7 @@ test('PostgreSQL join, leave, cancellation and Activity work across authenticate
 
 test('QA: every public route survives a logged-out auth response and private routes still redirect', async ({ page }) => {
   await page.route('**/api/auth/me', route => route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Please sign in."}' }));
-  for (const [path, heading] of [['/', 'Request a ride'], ['/#/', 'Request a ride'], ['/#/find', 'Find a Ride'], ['/#/about', 'EagleRide']]) {
+  for (const [path, heading] of [['/', 'Plan a ride'], ['/#/', 'Plan a ride'], ['/#/find', 'Find a Ride'], ['/#/about', 'EagleRide']]) {
     await page.goto(path);
     await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
     await expect(page).not.toHaveURL(/signin/);
@@ -312,7 +312,7 @@ test('chat persists across refresh, uses real identity and becomes read-only aft
   await page.reload();
   await expect(page.getByText('Browser persistent message', { exact: true })).toBeVisible();
   expect((await page.request.post('/api/rides/' + ride.id + '/cancel', { headers: { Origin: 'http://127.0.0.1:3100' } })).status()).toBe(200);
-  await page.getByRole('button', { name: 'Refresh chat' }).click();
+  // Cancellation arrives through the authenticated realtime stream.
   await expect(page.getByText('This ride is cancelled. Chat history is read-only.')).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeDisabled();
@@ -330,7 +330,7 @@ test('routing unavailable does not block ride creation and never displays fabric
   await page.goto('/#/create');
   await page.getByPlaceholder('Pickup location').fill('Unique custom pickup');
   await page.getByPlaceholder('Dropoff location').fill('Unique custom destination');
-  await page.getByRole('heading', { name: 'Request a ride', exact: true }).click();
+  await page.getByRole('heading', { name: 'Plan a ride', exact: true }).click();
   await expect(page.getByText(/Estimated fare|Available on Ride Detail|Split 4 ways/)).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Check live route' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -368,10 +368,10 @@ test('Create, Find and Activity never request routing; confirmation has no route
   const calls: string[] = [];
   page.on('request', request => { if (/api\/routes|route-snapshot/.test(request.url())) calls.push(request.url()); });
   await page.goto('/');
-  await expect(page.getByRole('heading',{name:'Request a ride',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Plan a ride',exact:true})).toBeVisible();
   await page.getByPlaceholder('Pickup location').fill('No routing pickup ' + Date.now());
   await page.getByPlaceholder('Dropoff location').fill('No routing destination');
-  await page.getByRole('heading', {name:'Request a ride',exact:true}).click();
+  await page.getByRole('heading', {name:'Plan a ride',exact:true}).click();
   await page.getByRole('button', {name:'Continue',exact:true}).click();
   await expect(page.getByRole('button', {name:'Post Ride',exact:true})).toBeVisible();
   await expect(page.getByRole('link',{name:'Check live route'})).toHaveCount(0);
@@ -401,7 +401,7 @@ test('request hero centers responsive controls and keeps confidence below the fo
   for (const viewport of [{width:1440,height:900},{width:390,height:844}]) {
     await page.setViewportSize(viewport);
     await page.goto('/');
-    await expect(page.getByRole('heading',{name:'Request a ride',exact:true})).toBeVisible();
+    await expect(page.getByRole('heading',{name:'Plan a ride',exact:true})).toBeVisible();
     const pickup=await page.getByPlaceholder('Pickup location').boundingBox();
     const dropoff=await page.getByPlaceholder('Dropoff location').boundingBox();
     const proceed=await page.getByRole('button',{name:'Continue',exact:true}).boundingBox();
@@ -490,4 +490,63 @@ test('sign in centers BC requirement and preserves anonymous browsing on both vi
     await page.getByRole('link',{name:'Browse rides without signing in',exact:true}).click();
     await expect(page).toHaveURL(/#\/find$/);
   }
+});
+
+test('public trip search uses origin, destination and departure window',async({page})=>{
+  await signIn(page); const ride=await createFutureRide(page);
+  await page.goto('/#/find');
+  await expect(page.getByRole('button',{name:'Filters',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Tomorrow',exact:true})).toHaveCount(0);
+  await page.getByLabel('From',{exact:true}).fill('Browser operations test');
+  await expect(page.getByRole('button',{name:'Tomorrow',exact:true})).toHaveCount(0);
+  await page.getByLabel('To',{exact:true}).fill('Boston College');
+  await expect(page.getByRole('button',{name:'Tomorrow',exact:true})).toBeVisible();
+  await page.getByLabel('To',{exact:true}).fill('   ');
+  await expect(page.getByRole('button',{name:'Tomorrow',exact:true})).toHaveCount(0);
+  await page.getByLabel('To',{exact:true}).fill('Boston College');
+  await page.getByRole('button',{name:'Tomorrow',exact:true}).click();
+  await page.getByRole('button',{name:'Custom',exact:true}).click();
+  await page.getByRole('combobox',{name:'From time',exact:true}).selectOption('00:00');
+  await page.getByRole('combobox',{name:'To time',exact:true}).selectOption('23:59');
+  await page.getByRole('button',{name:'Search rides'}).click();
+  await expect(page.locator(`a[href="#/ride/${ride.id}"]`)).toBeVisible();
+  await expect(page.locator(`a[href="#/ride/${ride.id}"]`).getByText('HOSTING',{exact:true})).toHaveCount(0);
+  await page.getByLabel('From',{exact:true}).fill('No matching location');
+  await page.getByRole('button',{name:'Search rides'}).click();
+  await expect(page.locator(`a[href="#/ride/${ride.id}"]`)).toHaveCount(0);
+});
+
+test('chat synchronizes messages, reactions and deletion across participants and reconnects',async({browser})=>{
+  const a=await browser.newContext(),b=await browser.newContext();
+  try{
+    const host=await a.newPage(),guest=await b.newPage();
+    await signIn(host);const ride=await createFutureRide(host);await signIn(guest,'bob');
+    expect((await guest.request.post('/api/rides/'+ride.id+'/join',{headers:{Origin:'http://127.0.0.1:3100'}})).status()).toBe(200);
+    await host.goto('/#/chat/'+ride.id);await guest.goto('/#/chat/'+ride.id);
+    await expect(guest.getByRole('textbox',{name:'Message',exact:true})).toBeVisible();
+    await expect(guest.getByText('Connected',{exact:true})).toHaveCount(0);
+    await host.getByRole('textbox',{name:'Message',exact:true}).fill('Realtime browser hello');
+    await host.getByRole('button',{name:'Send message'}).click();
+    await expect(guest.getByText('Realtime browser hello',{exact:true})).toBeVisible();
+    await expect(guest.getByRole('button',{name:'Delete',exact:true})).toHaveCount(0);
+    await guest.getByRole('button',{name:'Message: Realtime browser hello. Open message actions',exact:true}).click();
+    await expect(guest.getByRole('button',{name:'Delete message',exact:true})).toHaveCount(0);
+    await guest.getByRole('button',{name:'React 👍',exact:true}).click();
+    await expect(host.getByRole('button',{name:'👍, 1 reactions',exact:true})).toHaveText('👍 1');
+    await b.setOffline(true);
+    await host.getByRole('textbox',{name:'Message',exact:true}).fill('Message during disconnect');
+    await host.getByRole('button',{name:'Send message'}).click();
+    await b.setOffline(false);
+    await expect(guest.getByText('Message during disconnect',{exact:true})).toHaveCount(1);
+    await host.getByRole('button',{name:'Message: Realtime browser hello. Open message actions',exact:true}).click();
+    await host.getByRole('button',{name:'Delete message',exact:true}).click();
+    await expect(host.getByRole('dialog',{name:'Delete message?'})).toBeVisible();
+    await host.getByRole('button',{name:'Cancel',exact:true}).click();
+    await expect(guest.getByText('Realtime browser hello',{exact:true})).toBeVisible();
+    await host.getByRole('button',{name:'Message: Realtime browser hello. Open message actions',exact:true}).click();
+    await host.getByRole('button',{name:'Delete message',exact:true}).click();
+    await host.getByRole('button',{name:'Delete',exact:true}).click();
+    await expect(guest.getByText('Realtime browser hello',{exact:true})).toHaveCount(0);
+    await expect(guest.getByRole('button',{name:'Refresh',exact:true})).toHaveCount(0);
+  }finally{await Promise.allSettled([a.close(),b.close()]);}
 });

@@ -5,9 +5,11 @@ export interface RideMessage {
   senderName: string;
   senderAvatarUrl: string | null;
   body: string;
+  reactions?: {userId:string;emoji:string}[];
   createdAt: string;
 }
 export interface RideChat {
+  revision: string;
   cancelledAt: string | null;
   messages: RideMessage[];
 }

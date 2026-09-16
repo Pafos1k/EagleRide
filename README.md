@@ -505,3 +505,50 @@ Cancel before Save discards the preview without uploading. Unsupported formats
 fall back to initials. Chat reads current profile references in its existing query;
 there is no additional polling. Discovery excludes full, past, and cancelled rides
 without removing their history.
+
+### Plan a ride, trip search, and realtime chat
+
+Migration `008_search_chat.sql` adds the explicit Now departure mode, chat revision,
+client message IDs, reactions, and transactional PostgreSQL notification triggers.
+Run `npm run build` then `npm run db:migrate` with the existing `DATABASE_URL`, and
+restart Express. No new Supabase bucket, publication, service key, or OAuth setting
+is required. The existing avatars bucket/setup continues unchanged.
+
+Now means a ten-minute coordination window starting at server creation time. Its
+stored departure is the end of that window; scheduled timestamps are unchanged.
+The existing expiration, joining, Activity, and route snapshot rules use that same
+instant. Existing past rides are not revived.
+
+Public `GET /api/rides` accepts optional `from`, `to`, `after`, and `before` filters.
+Location matching normalizes case/whitespace against the separately stored name
+and address, not a combined display label. There are no place IDs in the current
+schema; this does not guess geographic proximity or geocode free text. An airport
+search includes its terminals. Dates/times are interpreted in the browser's local
+timezone and sent as UTC bounds; omitted filters retain upcoming available rides.
+
+Chat uses authenticated `GET /api/rides/:id/events` (SSE) plus PostgreSQL
+LISTEN/NOTIFY. Notifications contain only ride-change signals; clients fetch
+participant-authorized durable history and discard older revisions. Reconnects
+resync history. A stream lasts at most 55 seconds before fresh authentication,
+with 15-second keepalives, at most five streams per user and 100 per process.
+Each stream needs a dedicated PostgreSQL session: use a direct/session connection,
+not a transaction-mode pooler. Reverse proxies must allow SSE and disable response
+buffering. No polling, WebSocket service, Redis, or Supabase Realtime is needed.
+
+POST messages accepts an optional UUID `clientMessageId` to deduplicate retries.
+`DELETE /api/rides/:id/messages/:messageId` checks authorship. PUT/DELETE on
+`/api/rides/:id/messages/:messageId/reactions` accepts one supported emoji and
+uses the authenticated user. Cancelled chats remain read-only. Reactions are
+stored in PostgreSQL and removed with their message.
+
+The Google G image is the official local asset from
+https://developers.google.com/static/identity/images/g-logo.png.
+Ride Detail shows the coordination and time-critical transportation disclaimer;
+no placeholder legal links are displayed.
+
+Migration `009_single_reaction.sql` enforces one reaction per user/message and
+notifies existing SSE subscribers on replacements. Existing stacked reactions
+keep one deterministic emoji (the old schema has no timestamp to infer recency).
+Apply it with `npm run db:migrate` after building the updated checkout; no Supabase
+dashboard or storage changes are required. PUT sets/replaces a reaction and DELETE
+removes the specified active reaction; selecting the active emoji in the UI removes it.

@@ -1,3 +1,4 @@
+import JourneyMap from '../src/components/JourneyMap';
 import { useRoute } from '../src/hooks/useRoute';
 import RouteInfo from '../src/components/RouteInfo';
 import React, { useState, useEffect } from 'react';
@@ -7,7 +8,6 @@ import {
   MapPin, 
   Clock, 
   Users, 
-  Briefcase, 
   CreditCard,
   CheckCircle2,
   AlertTriangle,
@@ -142,7 +142,7 @@ const RideDetail: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8 mb-6 sm:mb-8 border-t border-neutral-100 pt-6 sm:pt-8">
+            <div className="flex mb-6 sm:mb-8 border-t border-neutral-100 pt-6 sm:pt-8">
               <div className="flex items-center space-x-3 sm:space-x-4">
                 <div className="w-10 h-10 bg-neutral-50 rounded-xl flex items-center justify-center text-neutral-400 shrink-0">
                   <Clock size={20} />
@@ -155,17 +155,6 @@ const RideDetail: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center space-x-3 sm:space-x-4">
-                <div className="w-10 h-10 bg-neutral-50 rounded-xl flex items-center justify-center text-neutral-400 shrink-0">
-                  <Briefcase size={20} />
-                </div>
-                <div>
-                  <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Luggage</p>
-                  <p className="text-xs sm:text-sm font-bold text-neutral-800 capitalize">
-                    {ride.luggageType.toLowerCase().replace('_', ' ')}
-                  </p>
-                </div>
-              </div>
             </div>
 
             {/* JOURNEY MAP */}
@@ -173,18 +162,7 @@ const RideDetail: React.FC = () => {
               <h2 className="text-base sm:text-lg font-bold text-neutral-800 text-center">Journey Map</h2>
               <RouteInfo {...routing} mapsUrl={externalMapsUrl} />
 
-              <div className="rounded-2xl border border-neutral-200 overflow-hidden h-60 sm:h-72 shadow-sm bg-neutral-50 relative">
-                <iframe
-                  width="100%"
-                  height="100%"
-                  frameBorder="0"
-                  style={{ border: 0 }}
-                  src={mapsEmbedUrl}
-                  allowFullScreen
-                  className="w-full h-full"
-                  title="Ride Route Map"
-                ></iframe>
-              </div>
+              <JourneyMap src={mapsEmbedUrl} />
             </div>
           </div>
 
@@ -288,7 +266,7 @@ const RideDetail: React.FC = () => {
             {actionError && <p role="alert" className="text-red-700 mb-3">{actionError}</p>}
             {user && (isHost || isJoined) && <Link to={'/chat/' + ride.id} className="flex w-full items-center justify-center gap-2 rounded-xl py-3 px-4 bg-black text-white font-bold mb-3"><MessageCircle size={18} />{ride.cancelledAt ? 'View chat history' : 'Open ride chat'}</Link>}
             {ride.cancelledAt ? <p className="font-bold text-red-700">Cancelled — this ride cannot be joined.</p> : <>
-              {isHost ? <><p className="text-sm mb-3">You are hosting this ride.</p><button disabled={busy} onClick={() => void act('cancel')} className="w-full rounded-xl py-3 bg-red-50 text-red-700 font-bold">Cancel ride</button><p className="text-xs text-neutral-500 mt-2">Editing is not available yet.</p></>
+              {isHost ? <><p className="text-sm mb-3 text-center">You are hosting this ride.</p><button disabled={busy} onClick={() => void act('cancel')} className="w-full rounded-xl py-3 bg-red-50 text-red-700 font-bold">Cancel ride</button></>
                 : isJoined ? <button disabled={busy} onClick={() => void act('leave')} className="w-full py-2 text-sm underline text-neutral-600">Leave ride</button>
                 : <button disabled={busy || rideCategory(ride) === 'past' || ride.seatsTaken >= ride.seatsTotal} onClick={() => void act('join')} className="w-full rounded-xl py-3 bg-black text-white font-bold disabled:opacity-50">{rideCategory(ride) === 'past' ? 'Departed' : ride.seatsTaken >= ride.seatsTotal ? 'Ride full' : user ? 'Join ride' : 'Sign in to join'}</button>}
             </>}
@@ -296,6 +274,9 @@ const RideDetail: React.FC = () => {
           </div>
         </div>
       </div>
+      <footer className="text-xs text-neutral-500 text-center max-w-3xl mx-auto px-4 pt-8 pb-8 leading-relaxed">
+        EagleRide is a ride-coordination platform, not a transportation provider. Rides are arranged between users and are not guaranteed. Drivers may cancel, arrive late, or fail to appear. Route, travel-time, and cost estimates are informational only and may change. Do not rely on EagleRide for time-critical transportation, including flights or other scheduled departures. Users are responsible for confirming ride arrangements, costs, timing, and personal safety.
+      </footer>
     </div>
   );
 };
