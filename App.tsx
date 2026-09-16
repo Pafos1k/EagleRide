@@ -242,6 +242,7 @@ const App: React.FC = () => {
           <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
           <Route path="/ride/:id" element={<RideDetail />} />
           <Route path="/chat/:id" element={<RequireAuth><ChatView /></RequireAuth>} />
+          <Route path="/profile/:userId" element={<Profile />} />
           <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
           <Route path="/signin" element={<SignIn />} />
           <Route path="/about" element={<About />} />

@@ -25,6 +25,11 @@ export async function mockSupabase(port = 0) {
     if (failures.has(url.pathname)) return json(failures.get(url.pathname), { message: 'Test provider unavailable' });
     const chunks=[]; for await(const part of req) chunks.push(part);
     const bytes=Buffer.concat(chunks);
+    if(url.pathname.startsWith('/storage/v1/object/public/avatars/')) {
+      const image=storedAvatars.get(url.pathname.replace('/public/','/'));
+      if(!image)return json(404,{message:'Not found'});
+      res.writeHead(200,{'Content-Type':'image/png'});res.end(image);return;
+    }
     if(url.pathname.startsWith('/storage/v1/object/avatars/')) {
       const session=access.get(req.headers.authorization?.replace(/^Bearer /i,''));
       if(!session || url.pathname !== '/storage/v1/object/avatars/'+session.user.id+'/avatar') return json(403,{message:'Denied'});

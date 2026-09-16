@@ -159,3 +159,14 @@ test('Journey Map reserves immediate loading space and starts iframe independent
   assert.match(html,/h-60 sm:h-72/);assert.match(html,/role="status"/);assert.match(html,/Loading map…/);assert.match(html,/aria-busy="true"/);
   assert.match(html,/<iframe/);assert.match(html,/src="https:\/\/maps.google.com\/maps\?output=embed"/);
 });
+
+test('reputation presentation distinguishes insufficient history and links chat identity without duplicating sender data',async()=>{
+  const {createElement}=await import('react');const {renderToStaticMarkup}=await import('react-dom/server');
+  const {default:Summary}=await import('../src/components/ReputationSummary.tsx');
+  const rep={rideCount:2,ratingCount:2,reliableCount:2,issueCount:0,distinctRideCount:2,distinctRaterCount:2,reliabilityPercent:null};
+  const fresh=renderToStaticMarkup(createElement(Summary,{reputation:rep}));assert.match(fresh,/New rider/);assert.doesNotMatch(fresh,/100%/);assert.match(fresh,/2 rides/);assert.match(fresh,/2 rating/);
+  const established=renderToStaticMarkup(createElement(Summary,{reputation:{...rep,rideCount:18,ratingCount:14,reliabilityPercent:93},compact:true}));assert.match(established,/93% reliable/);assert.match(established,/18 rides/);
+  const {default:Messages}=await import('../src/components/ChatMessages.tsx');
+  const html=renderToStaticMarkup(createElement(Messages,{currentUserId:'me',messages:[{id:'1',rideId:'ride',senderUserId:'other',senderName:'Alex',senderAvatarUrl:'/api/users/other/avatar',body:'Hi',createdAt:new Date().toISOString()}]}));
+  assert.equal((html.match(/href="#\/profile\/other"/g)||[]).length,2);assert.match(html,/Alex/);assert.match(html,/\/api\/users\/other\/avatar/);
+});

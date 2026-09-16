@@ -1,3 +1,5 @@
+import ReputationSummary from '../src/components/ReputationSummary';
+import UserAvatar from '../src/components/UserAvatar';
 import JourneyMap from '../src/components/JourneyMap';
 import { useRoute } from '../src/hooks/useRoute';
 import RouteInfo from '../src/components/RouteInfo';
@@ -173,19 +175,20 @@ const RideDetail: React.FC = () => {
             <div className="space-y-3">
               {participants.map((p, idx) => (
                 <div key={idx} className="flex items-center justify-between p-4 bg-neutral-50 rounded-xl border border-neutral-100">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-10 h-10 bg-neutral-200 rounded-full flex items-center justify-center text-neutral-600 font-bold text-sm">
-                      {p.userId === ride.hostUserId ? 'H' : 'P'}
-                    </div>
-                    <div>
-                      <p className="font-bold text-neutral-800 text-sm">
-                        {p.userId === user?.id ? 'You' : `Eagle Participant`}
-                        {p.userId === ride.hostUserId && <span className="ml-2 text-[10px] bg-black text-white px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Host</span>}
+                  <div className="flex items-center space-x-3 sm:space-x-4 flex-1 min-w-0">
+                    <Link className="shrink-0" to={p.userId===user?.id?'/profile':'/profile/'+encodeURIComponent(p.userId)} aria-label={`View ${p.profile?.fullName??'rider'} profile`}>
+                      <UserAvatar name={p.profile?.fullName??'Rider'} url={p.profile?.avatarUrl} className="w-10 h-10" />
+                    </Link>
+                    <div className="min-w-0">
+                      <p className="font-bold text-neutral-800 text-sm [overflow-wrap:anywhere]">
+                        <Link to={p.userId===user?.id?'/profile':'/profile/'+encodeURIComponent(p.userId)} className="hover:underline">{p.userId===user?.id?'You':p.profile?.fullName??'Eagle Participant'}</Link>
+                        {p.userId===ride.hostUserId && <span className="ml-2 text-[10px] bg-black text-white px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Host</span>}
                       </p>
+                      {p.profile && <ReputationSummary reputation={p.profile.reputation} compact />}
                       <p className="text-[10px] text-neutral-400 font-medium uppercase tracking-wider">Joined {new Date(p.joinedAt).toLocaleDateString()}</p>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2 text-[10px] font-bold uppercase tracking-wider">
+                  <div className="flex items-center space-x-2 text-[10px] font-bold uppercase tracking-wider shrink-0 ml-2">
                     <span className="flex items-center space-x-1 text-emerald-600"><CheckCircle2 size={12} /><span>Joined</span></span>
                   </div>
                 </div>
@@ -266,7 +269,7 @@ const RideDetail: React.FC = () => {
             {actionError && <p role="alert" className="text-red-700 mb-3">{actionError}</p>}
             {user && (isHost || isJoined) && <Link to={'/chat/' + ride.id} className="flex w-full items-center justify-center gap-2 rounded-xl py-3 px-4 bg-black text-white font-bold mb-3"><MessageCircle size={18} />{ride.cancelledAt ? 'View chat history' : 'Open ride chat'}</Link>}
             {ride.cancelledAt ? <p className="font-bold text-red-700">Cancelled — this ride cannot be joined.</p> : <>
-              {isHost ? <><p className="text-sm mb-3 text-center">You are hosting this ride.</p><button disabled={busy} onClick={() => void act('cancel')} className="w-full rounded-xl py-3 bg-red-50 text-red-700 font-bold">Cancel ride</button></>
+              {isHost ? <><p className="text-sm mb-3 text-center">You are hosting this ride.</p>{rideCategory(ride)!=='past' && <button disabled={busy} onClick={() => void act('cancel')} className="w-full rounded-xl py-3 bg-red-50 text-red-700 font-bold">Cancel ride</button>}</>
                 : isJoined ? <button disabled={busy} onClick={() => void act('leave')} className="w-full py-2 text-sm underline text-neutral-600">Leave ride</button>
                 : <button disabled={busy || rideCategory(ride) === 'past' || ride.seatsTaken >= ride.seatsTotal} onClick={() => void act('join')} className="w-full rounded-xl py-3 bg-black text-white font-bold disabled:opacity-50">{rideCategory(ride) === 'past' ? 'Departed' : ride.seatsTaken >= ride.seatsTotal ? 'Ride full' : user ? 'Join ride' : 'Sign in to join'}</button>}
             </>}

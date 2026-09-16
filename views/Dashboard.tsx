@@ -1,3 +1,4 @@
+import RateParticipants from '../src/components/RateParticipants';
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, ChevronRight, MapPin, Search } from 'lucide-react';
@@ -32,7 +33,7 @@ export default function Dashboard() {
   }, [user?.id, reload]);
 
   const owned = rides.filter(ride => user && (ride.hostUserId === user.id ||
-    ride.participants.some(p => p.userId === user.id && !p.leftAt)));
+    ride.participants.some(p => p.userId === user.id && (!p.leftAt || ride.category === 'past'))));
   // Cancellation always wins, even if a previously fetched category is stale.
   const upcoming = owned.filter(ride => rideCategory(ride) === 'upcoming');
   const groups = [
@@ -65,7 +66,7 @@ export default function Dashboard() {
           {index === 0 && <Link to="/find" className="text-black text-xs sm:text-sm font-bold uppercase tracking-wider flex items-center hover:underline group">Find More <ChevronRight size={16} className="ml-1 group-hover:translate-x-1 transition-transform" /></Link>}
         </div>
         {group.rides.length ? <div className="grid grid-cols-1 gap-3 sm:gap-4">{group.rides.map(ride =>
-          <Link key={ride.id} to={'/ride/' + ride.id} className="group">
+          <div key={ride.id}><Link to={'/ride/' + ride.id} className="group">
             <div className="bg-white border border-neutral-200 rounded-2xl p-4 sm:p-6 hover:border-black transition-all flex items-center gap-3 sm:gap-6">
               <div className="w-18 sm:w-24 shrink-0 flex flex-col justify-center">
                 <span className="font-bold text-neutral-900 text-base sm:text-xl leading-tight whitespace-nowrap">{new Date(ride.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
@@ -85,7 +86,7 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-          </Link>)}</div> : index === 0 ?
+          </Link>{ride.canRate && <RateParticipants rideId={ride.id} remaining={ride.ratingsRemaining ?? 0} />}</div>)}</div> : index === 0 ?
           <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl sm:rounded-[2.5rem] p-8 sm:p-12 md:p-16 text-center">
             <div className="w-16 h-16 sm:w-20 sm:h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6"><Search size={28} className="text-slate-300 sm:w-8 sm:h-8" /></div>
             <h3 className="text-xl sm:text-2xl font-black text-slate-800 uppercase italic">No Active Rides</h3>

@@ -15,7 +15,12 @@ export async function operateRide(pool: Pool, id: string, userId: string, operat
     if (!ride) throw new RideOperationError(404, 'Ride not found.');
     if (operation === 'cancel') {
       if (ride.host_user_id !== userId) throw new RideOperationError(403, 'Only the host can cancel this ride.');
-      await client.query('UPDATE rides SET cancelled_at=COALESCE(cancelled_at, clock_timestamp()) WHERE id=$1', [id]);
+      // One timestamp for both the deadline decision and stored cancellation;
+      // a separate check followed by a write can cross departure in between.
+      const cancelled = await client.query(`WITH timing AS MATERIALIZED (SELECT clock_timestamp() AS at)
+        UPDATE rides SET cancelled_at=COALESCE(cancelled_at,timing.at) FROM timing
+        WHERE id=$1 AND (cancelled_at IS NOT NULL OR departure_at>timing.at) RETURNING id`, [id]);
+      if (!cancelled.rowCount) throw new RideOperationError(409, 'A ride cannot be cancelled after departure.');
     } else {
       if (ride.host_user_id === userId) throw new RideOperationError(409, operation === 'join' ? 'You already host this ride.' : 'Hosts must cancel the ride instead of leaving.');
       const membership = (await client.query('SELECT * FROM ride_participants WHERE ride_id=$1 AND user_id=$2', [id, userId])).rows[0];

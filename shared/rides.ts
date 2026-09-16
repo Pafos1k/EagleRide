@@ -1,3 +1,4 @@
+import type { PublicProfile } from './reputation';
 import type { z } from 'zod';
 import type { locationSchema, createRideSchema } from './rideInput';
 
@@ -9,7 +10,7 @@ export interface PersistedRide extends CreateRideInput {
   seatsTaken: number;
   createdAt: string;
   cancelledAt: string | null;
-  participants: { id: string; rideId: string; userId: string; joinedAt: string; leftAt: string | null }[];
+  participants: { id: string; rideId: string; userId: string; joinedAt: string; leftAt: string | null; profile?: PublicProfile }[];
 }
 export const locationLabel = (location: RideLocation) =>
   `${location.name}${location.terminal ? ` (${location.terminal})` : ''}`;
@@ -17,4 +18,4 @@ export const locationLabel = (location: RideLocation) =>
 export type RideCategory = 'upcoming' | 'past' | 'cancelled';
 export const rideCategory = (ride: PersistedRide, now = Date.now()): RideCategory =>
   ride.cancelledAt ? 'cancelled' : Date.parse(ride.departureTime) <= now ? 'past' : 'upcoming';
-export type ActivityRide = PersistedRide & { role: 'host' | 'participant'; membership: 'active' | 'left'; category: RideCategory };
+export type ActivityRide = PersistedRide & { role: 'host' | 'participant'; membership: 'active' | 'left'; category: RideCategory; canRate?: boolean; ratingsRemaining?: number };

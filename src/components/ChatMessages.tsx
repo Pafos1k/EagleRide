@@ -48,9 +48,9 @@ export default function ChatMessages({ messages, currentUserId, onDelete, onReac
     reactions.forEach(reaction => counts.set(reaction.emoji, (counts.get(reaction.emoji) ?? 0) + 1));
     const actionable = !readOnly && (!!onReact || (mine && !!onDelete));
     return <div key={message.id} className={`flex items-end gap-2 ${mine ? 'justify-end' : 'justify-start'} ${first ? 'mt-4' : 'mt-1'}`}>
-      {!mine && <div className="w-8 shrink-0 self-start">{first && <UserAvatar name={message.senderName} url={message.senderAvatarUrl} />}</div>}
+      {!mine && <div className="w-8 shrink-0 self-start">{first && <a href={`#/profile/${encodeURIComponent(message.senderUserId)}`} aria-label={`View ${message.senderName} profile`}><UserAvatar name={message.senderName} url={message.senderAvatarUrl} /></a>}</div>}
       <div className="max-w-[65%] min-w-0 relative group">
-        {!mine && first && <p className="text-xs font-semibold text-neutral-600 mb-1 break-words">{message.senderName}</p>}
+        {!mine && first && <p className="text-xs font-semibold text-neutral-600 mb-1 break-words"><a href={`#/profile/${encodeURIComponent(message.senderUserId)}`} className="hover:underline">{message.senderName}</a></p>}
         <div role={actionable ? 'button' : undefined} tabIndex={actionable ? 0 : undefined}
           aria-label={actionable ? `Message: ${message.body}. Open message actions` : undefined}
           aria-haspopup={actionable ? 'dialog' : undefined} aria-expanded={actionable ? selected === message.id : undefined}

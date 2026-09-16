@@ -27,3 +27,7 @@ export const sendMessage = (id: string, body: string, clientMessageId?: string) 
 
 export const deleteMessage=(rideId:string,id:string)=>request<import('../../shared/messages').RideChat>(`/api/rides/${rideId}/messages/${id}`,{method:'DELETE'});
 export const reactMessage=(rideId:string,id:string,emoji:string,remove:boolean)=>request<import('../../shared/messages').RideChat>(`/api/rides/${rideId}/messages/${id}/reactions`,{method:remove?'DELETE':'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({emoji})});
+
+export const getPublicProfile=(id:string,signal?:AbortSignal)=>request<import('../../shared/reputation').PublicProfile>(`/api/users/${encodeURIComponent(id)}`,{signal,cache:'no-store'});
+export const getRideRatings=(id:string,signal?:AbortSignal)=>request<import('../../shared/reputation').RideRatings>(`/api/rides/${encodeURIComponent(id)}/ratings`,{signal,cache:'no-store'});
+export const submitRating=(id:string,input:import('../../shared/reputation').RatingInput)=>request<import('../../shared/reputation').RideRatings>(`/api/rides/${encodeURIComponent(id)}/ratings`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});

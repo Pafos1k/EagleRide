@@ -550,3 +550,71 @@ test('chat synchronizes messages, reactions and deletion across participants and
     await expect(guest.getByRole('button',{name:'Refresh',exact:true})).toHaveCount(0);
   }finally{await Promise.allSettled([a.close(),b.close()]);}
 });
+
+test('reputation: Group Members and chat identities open the shared read-only profile; own profile stays editable',async({browser})=>{
+  const hostContext=await browser.newContext(),guestContext=await browser.newContext();
+  try{
+    const host=await hostContext.newPage(),guest=await guestContext.newPage();
+    await signIn(host);const ride=await createFutureRide(host);
+    const hostUser=await (await host.request.get('/api/auth/me')).json();
+    await signIn(guest,'bob');
+    expect((await guest.request.post(`/api/rides/${ride.id}/join`,{headers:{Origin:'http://127.0.0.1:3100'}})).status()).toBe(200);
+    await guest.goto('/#/ride/'+ride.id);
+    await guest.getByRole('link',{name:'View Alice Eagle profile',exact:true}).click();
+    await expect(guest).toHaveURL(new RegExp('/profile/'+hostUser.id));
+    await expect(guest.getByRole('heading',{name:'Alice Eagle',exact:true})).toBeVisible();
+    await expect(guest.getByRole('region',{name:'Rider reliability'})).toContainText('New rider');
+    await expect(guest.getByText(hostUser.bcEmail,{exact:true})).toHaveCount(0);
+    await expect(guest.getByRole('button',{name:'Edit profile',exact:true})).toHaveCount(0);
+    await expect(guest.getByRole('button',{name:'Sign Out',exact:true})).toHaveCount(0);
+    expect((await guest.request.post(`/api/rides/${ride.id}/messages`,{headers:{Origin:'http://127.0.0.1:3100'},data:{body:'Hello from Bob'}})).status()).toBe(201);
+    await host.goto('/#/chat/'+ride.id);
+    await host.getByRole('link',{name:'Bob Eagle',exact:true}).click();
+    await expect(host.getByRole('heading',{name:'Bob Eagle',exact:true})).toBeVisible();
+    await expect(host.getByRole('button',{name:'Edit profile',exact:true})).toHaveCount(0);
+    await host.goto('/#/profile');
+    await host.getByRole('button',{name:'Edit profile',exact:true}).click();
+    await expect(host.getByLabel('Display name',{exact:true})).toBeEditable();
+    await expect(host.getByRole('button',{name:'Change photo',exact:true})).toBeVisible();
+    await host.getByRole('button',{name:'Cancel',exact:true}).click();
+    await expect(host.getByRole('button',{name:'Sign Out',exact:true})).toBeVisible();
+    await guest.getByRole('link',{name:'Profile',exact:true}).first().click();
+    await guest.getByRole('button',{name:'Sign Out',exact:true}).click();
+    await guest.goto('/#/profile/'+hostUser.id);
+    await expect(guest.getByRole('heading',{name:'Alice Eagle',exact:true})).toBeVisible();
+    await expect(guest.getByText(hostUser.bcEmail,{exact:true})).toHaveCount(0);
+  }finally{await guestContext.close();await hostContext.close();}
+});
+
+test('reputation: Activity offers recipient-specific outcomes, persists rated state and stays compact on mobile',async({page})=>{
+  await signIn(page);await page.setViewportSize({width:390,height:844});
+  const ride=await createFutureRide(page),me=await (await page.request.get('/api/auth/me')).json();
+  const reputation={reliabilityPercent:null,rideCount:1,ratingCount:0,reliableCount:0,issueCount:0,distinctRideCount:0,distinctRaterCount:0};
+  const recipients=[{profile:{id:'normal',fullName:'Normal Rider',avatarUrl:null,reputation},eligibility:'joined',rating:null},{profile:{id:'late',fullName:'Late Rider',avatarUrl:null,reputation},eligibility:'late_cancellation',rating:null}] as any[];
+  const submissions:any[]=[];
+  await page.route('**/api/rides/mine',route=>route.fulfill({json:[{...ride,hostUserId:me.id,departureTime:new Date(Date.now()-60000).toISOString(),category:'past',role:'host',membership:'active',canRate:true,ratingsRemaining:2-submissions.length}]}));
+  await page.route(`**/api/rides/${ride.id}/ratings`,route=>{
+    if(route.request().method()==='POST'){const body=route.request().postDataJSON();submissions.push(body);recipients.find(p=>p.profile.id===body.recipientUserId).rating={outcome:body.outcome,reason:body.reason??null};}
+    return route.fulfill({json:{canRate:true,recipients}});
+  });
+  await page.goto('/#/dashboard');await page.getByRole('button',{name:'Rate participants',exact:true}).click();
+  await expect(page.getByText('Was Normal Rider reliable for this ride?',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'⚠ There was an issue',exact:true}).first().click();
+  await expect(page.getByRole('button',{name:'No-show',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Significantly late',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Late cancellation',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'✓ Yes, showed up as agreed',exact:true}).click();
+  await expect(page.getByText('Rated · Reliable',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'✓ Yes, showed up as agreed',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'⚠ There was an issue',exact:true}).click();
+  await expect(page.getByRole('button',{name:'No-show',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Significantly late',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Late cancellation',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Ratings submitted',exact:true})).toBeVisible();
+  expect(submissions).toEqual([{recipientUserId:'normal',outcome:'reliable'},{recipientUserId:'late',outcome:'issue',reason:'late_cancellation'}]);
+  await page.reload();await page.getByRole('button',{name:'Ratings submitted',exact:true}).click();
+  await expect(page.getByText('Rated · Reliable',{exact:true})).toBeVisible();
+  await expect(page.getByText('Rated · late cancellation',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'⚠ There was an issue',exact:true})).toHaveCount(0);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+});
