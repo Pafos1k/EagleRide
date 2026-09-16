@@ -65,7 +65,7 @@ const FindRides: React.FC = () => {
         <form className="w-full space-y-3" onSubmit={event=>{
           event.preventDefault();applySearch();
         }}>
-          <div className="grid sm:grid-cols-2 gap-3">{(['from','to'] as const).map(key=><label key={key} className="text-left text-sm">{key==='from'?'From':'To'}<input list="ride-locations" className="w-full bg-neutral-100 rounded-xl p-3 mt-1" value={fields[key]} onChange={e=>setFields({...fields,[key]:e.target.value})}/></label>)}</div>
+          <div className="grid sm:grid-cols-2 gap-3">{(['from','to'] as const).map(key=><label key={key} className="text-left text-sm">{key==='from'?'From':'To'}<input list="ride-locations" className="w-full bg-neutral-100 rounded-xl p-3 mt-1 text-center" value={fields[key]} onChange={e=>setFields({...fields,[key]:e.target.value})}/></label>)}</div>
           <datalist id="ride-locations">{[...campusGroups.flatMap(group=>group.campuses.map(campus=>campus.aliases[0])),'Logan Airport (BOS)','South Station','177 Huntington Ave'].map(name=><option key={name} value={name}/>)}</datalist>
           {locationsReady && <div className="space-y-3">
             <RideSearchSchedule active={dateEnabled} value={fields} onChange={value=>{const next={...fields,...value};setFields(next);setDateEnabled(true);applySearch(next,true,nearby);}}/>

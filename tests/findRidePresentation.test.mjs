@@ -13,10 +13,10 @@ test('date/time visibility requires two valid locations and handles clearing/inv
     assert.equal(hasValidSearchLocations(from,to),expected);
   }
 });
-test('all cards share border and layout classes; only hosted cards show the HOSTING badge',()=>{
-  const owned=render('host');assert.match(owned,/HOSTING/);assert.doesNotMatch(owned,/Your ride/);
+test('all cards share identical markup regardless of ownership, with no hosting label',()=>{
+  const owned=render('host');assert.doesNotMatch(owned,/HOSTING|Your ride/);
   for(const user of ['host','other',undefined]){
-    const html=render(user);assert.match(html,/border-2 border-neutral-800/);assert.match(html,/bg-white/);assert.match(html,/hover:border-black/);assert.match(html,/h-5 flex items-center justify-end/);
+    const html=render(user);assert.match(html,/border-2 border-neutral-800/);assert.match(html,/bg-white/);assert.match(html,/hover:border-black/);assert.equal(html,owned);
     if(user!=='host')assert.doesNotMatch(html,/HOSTING|Your ride/);
     const cardClasses=html.match(/<a[^>]*><div class="([^"]+)"/)[1];
     assert.equal(cardClasses,owned.match(/<a[^>]*><div class="([^"]+)"/)[1]);
@@ -38,4 +38,12 @@ test('cards preserve actual locations without large campus headings; expanded ma
   assert.match(normal,/FROM: Boston College/);assert.match(normal,/Logan Airport \(BOS\) \(C\)/);assert.doesNotMatch(normal,/Pickup:|Dropoff:|Nearby campus/);
   const expanded=render('other',{from:'Newton Campus',nearbyCampuses:'true'});
   assert.match(expanded,/aria-label="Nearby campus pickup:/);assert.match(expanded,/FROM: Boston College/);
+});
+
+test('From/To input text and hosting notice are centered without replacing inputs',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const find=await readFile(new URL('../views/FindRides.tsx',import.meta.url),'utf8');
+  assert.match(find,/<input list="ride-locations" className="[^"]*text-center/);
+  const detail=await readFile(new URL('../views/RideDetail.tsx',import.meta.url),'utf8');
+  assert.match(detail,/className="text-sm mb-3 text-center">You are hosting this ride\./);
 });

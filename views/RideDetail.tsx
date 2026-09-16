@@ -1,3 +1,4 @@
+import JourneyMap from '../src/components/JourneyMap';
 import { useRoute } from '../src/hooks/useRoute';
 import RouteInfo from '../src/components/RouteInfo';
 import React, { useState, useEffect } from 'react';
@@ -161,18 +162,7 @@ const RideDetail: React.FC = () => {
               <h2 className="text-base sm:text-lg font-bold text-neutral-800 text-center">Journey Map</h2>
               <RouteInfo {...routing} mapsUrl={externalMapsUrl} />
 
-              <div className="rounded-2xl border border-neutral-200 overflow-hidden h-60 sm:h-72 shadow-sm bg-neutral-50 relative">
-                <iframe
-                  width="100%"
-                  height="100%"
-                  frameBorder="0"
-                  style={{ border: 0 }}
-                  src={mapsEmbedUrl}
-                  allowFullScreen
-                  className="w-full h-full"
-                  title="Ride Route Map"
-                ></iframe>
-              </div>
+              <JourneyMap src={mapsEmbedUrl} />
             </div>
           </div>
 
@@ -276,7 +266,7 @@ const RideDetail: React.FC = () => {
             {actionError && <p role="alert" className="text-red-700 mb-3">{actionError}</p>}
             {user && (isHost || isJoined) && <Link to={'/chat/' + ride.id} className="flex w-full items-center justify-center gap-2 rounded-xl py-3 px-4 bg-black text-white font-bold mb-3"><MessageCircle size={18} />{ride.cancelledAt ? 'View chat history' : 'Open ride chat'}</Link>}
             {ride.cancelledAt ? <p className="font-bold text-red-700">Cancelled — this ride cannot be joined.</p> : <>
-              {isHost ? <><p className="text-sm mb-3">You are hosting this ride.</p><button disabled={busy} onClick={() => void act('cancel')} className="w-full rounded-xl py-3 bg-red-50 text-red-700 font-bold">Cancel ride</button></>
+              {isHost ? <><p className="text-sm mb-3 text-center">You are hosting this ride.</p><button disabled={busy} onClick={() => void act('cancel')} className="w-full rounded-xl py-3 bg-red-50 text-red-700 font-bold">Cancel ride</button></>
                 : isJoined ? <button disabled={busy} onClick={() => void act('leave')} className="w-full py-2 text-sm underline text-neutral-600">Leave ride</button>
                 : <button disabled={busy || rideCategory(ride) === 'past' || ride.seatsTaken >= ride.seatsTotal} onClick={() => void act('join')} className="w-full rounded-xl py-3 bg-black text-white font-bold disabled:opacity-50">{rideCategory(ride) === 'past' ? 'Departed' : ride.seatsTaken >= ride.seatsTotal ? 'Ride full' : user ? 'Join ride' : 'Sign in to join'}</button>}
             </>}

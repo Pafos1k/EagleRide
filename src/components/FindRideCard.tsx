@@ -4,7 +4,6 @@ import {MapPin,ChevronRight} from 'lucide-react';
 import {locationLabel,rideCategory,type PersistedRide} from '../../shared/rides';
 import {campusMatchNote} from '../lib/findRidePresentation';
 export default function FindRideCard({ride,currentUserId,search}:{ride:PersistedRide;currentUserId?:string;search:Record<string,string>}){
-  const owned=!!currentUserId && ride.hostUserId===currentUserId;
   const note=campusMatchNote(ride,search);
   return (
     <Link to={`/ride/${ride.id}`} className="group">
@@ -44,7 +43,8 @@ export default function FindRideCard({ride,currentUserId,search}:{ride:Persisted
               <span className="font-bold text-neutral-400 text-[9px] sm:text-[10px] uppercase tracking-wider">
                 {ride.cancelledAt ? 'Cancelled' : rideCategory(ride) === 'past' ? 'Past' : ride.seatsTaken >= ride.seatsTotal ? 'Full' : 'View / Join'}
               </span>
-              <div className="h-5 flex items-center justify-end">{owned && <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[8px] sm:text-[9px] leading-none font-semibold tracking-wide text-neutral-700">HOSTING</span>}</div>
+              <div className="h-5" aria-hidden="true" />
+
             </div>
           </div>
 

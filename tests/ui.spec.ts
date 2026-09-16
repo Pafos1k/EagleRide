@@ -510,7 +510,7 @@ test('public trip search uses origin, destination and departure window',async({p
   await page.getByRole('combobox',{name:'To time',exact:true}).selectOption('23:59');
   await page.getByRole('button',{name:'Search rides'}).click();
   await expect(page.locator(`a[href="#/ride/${ride.id}"]`)).toBeVisible();
-  await expect(page.locator(`a[href="#/ride/${ride.id}"]`).getByText('HOSTING',{exact:true})).toBeVisible();
+  await expect(page.locator(`a[href="#/ride/${ride.id}"]`).getByText('HOSTING',{exact:true})).toHaveCount(0);
   await page.getByLabel('From',{exact:true}).fill('No matching location');
   await page.getByRole('button',{name:'Search rides'}).click();
   await expect(page.locator(`a[href="#/ride/${ride.id}"]`)).toHaveCount(0);

@@ -151,3 +151,11 @@ test('presentation cleanup removes Ride Detail placeholders and keeps chat guida
   assert.doesNotMatch(chat,/connected\?'Connected'|Messages update automatically|<Info|text-center max-w-sm/);
   assert.match(chat,/This ride is cancelled\. Chat history is read-only\./);
 });
+
+test('Journey Map reserves immediate loading space and starts iframe independently of route data',async()=>{
+  const {createElement}=await import('react');const {renderToStaticMarkup}=await import('react-dom/server');
+  const {default:JourneyMap}=await import('../src/components/JourneyMap.tsx');
+  const html=renderToStaticMarkup(createElement(JourneyMap,{src:'https://maps.google.com/maps?output=embed'}));
+  assert.match(html,/h-60 sm:h-72/);assert.match(html,/role="status"/);assert.match(html,/Loading map…/);assert.match(html,/aria-busy="true"/);
+  assert.match(html,/<iframe/);assert.match(html,/src="https:\/\/maps.google.com\/maps\?output=embed"/);
+});
