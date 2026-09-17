@@ -1,3 +1,4 @@
+import {useLiveRide} from '../src/hooks/useLiveRide';
 import ReputationSummary from '../src/components/ReputationSummary';
 import UserAvatar from '../src/components/UserAvatar';
 import JourneyMap from '../src/components/JourneyMap';
@@ -30,35 +31,15 @@ const RideDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
   const [reload, setReload] = useState(0);
   
-  const [ride, setRide] = useState<PersistedRide | null>(null);
-  const [participants, setParticipants] = useState<PersistedRide['participants']>([]);
-  const [isJoined, setIsJoined] = useState(false);
+  const {ride,loading,error,accept}=useLiveRide(id,reload);
+  const participants=ride?.participants.filter(p=>!p.leftAt)??[];
+  const isJoined=participants.some(p=>p.userId===user?.id);
   const [selectedSplitCount, setSelectedSplitCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    setRide(null);
-    setSelectedSplitCount(null);
-    getRide(id ?? '', controller.signal).then(ride => {
-      setRide(ride);
-      setParticipants(ride.participants.filter(p => !p.leftAt));
-      setIsJoined(ride.participants.some(p => p.userId === user?.id && !p.leftAt));
-    }).catch(error => {
-      if (!controller.signal.aborted) setError(error instanceof ApiError && error.status === 404
-        ? 'Ride not found.' : 'Unable to load this ride. Please try again.');
-    }).finally(() => {
-      if (!controller.signal.aborted) setLoading(false);
-    });
-    return () => controller.abort();
-  }, [id, reload, user?.id]);
+  useEffect(()=>setSelectedSplitCount(null),[id,reload,user?.id]);
 
 
   async function act(operation: 'join' | 'leave' | 'cancel') {
@@ -66,15 +47,14 @@ const RideDetail: React.FC = () => {
     setBusy(true); setActionError('');
     try {
       const updated = await operateRide(id!, operation);
-      setRide(updated); setParticipants(updated.participants.filter(p => !p.leftAt));
-      setIsJoined(updated.participants.some(p => p.userId === user.id && !p.leftAt));
+      accept(updated);
       setSelectedSplitCount(null);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) navigate(signInPath('/ride/' + id));
       else {
         setActionError(error instanceof Error ? error.message : 'Unable to update ride.');
         // Another participant may have taken the last seat; refresh the displayed count.
-        try { const latest = await getRide(id!); setRide(latest); setParticipants(latest.participants.filter(p => !p.leftAt)); setIsJoined(latest.participants.some(p => p.userId === user.id && !p.leftAt)); } catch { /* Preserve the actionable error. */ }
+        try { const latest = await getRide(id!); accept(latest); } catch { /* Preserve the actionable error. */ }
       }
     } finally { setBusy(false); }
   }

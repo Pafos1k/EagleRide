@@ -20,7 +20,7 @@ export async function publicProfiles(db: Database, ids: string[]): Promise<Publi
   return result.rows.map(row => ({ id: row.id, fullName: row.name, avatarUrl: row.avatar ? publicAvatarPath(row.id, row.avatar) : null,
     reputation: { rideCount: row.rides, ratingCount: row.ratings, reliableCount: row.reliable, issueCount: row.ratings-row.reliable,
       distinctRideCount: row.rated_rides, distinctRaterCount: row.raters,
-      reliabilityPercent: row.ratings>=3 && row.rated_rides>=3 && row.raters>=3 ? Math.round(100*row.reliable/row.ratings) : null } }));
+      reliabilityPercent: row.rated_rides>=2 && row.raters>=2 ? Math.round(100*row.reliable/row.ratings) : null } }));
 }
 
 export async function rideRatings(db: Database, rideId: string, userId: string): Promise<RideRatings> {

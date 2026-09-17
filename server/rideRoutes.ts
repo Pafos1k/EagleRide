@@ -1,6 +1,6 @@
 import { ratingInput } from '../shared/reputation';
 import { rideRatings, submitRating } from './reputation';
-import {chatEvents} from './chatEvents';
+import {chatEvents,rideEvents} from './chatEvents';
 import {rideSearchSchema} from '../shared/rideSearch';
 import { createRoutingService, routingQuota } from './routing';
 import { rideRouteSnapshot } from './routeSnapshots';
@@ -43,6 +43,11 @@ export function rideRoutes(requireUser: RequestHandler) {
     const input=ratingInput.safeParse(req.body);
     if(!input.success)return res.status(400).json({error:'Invalid rating.'});
     res.json(await submitRating(pool!,String(req.params.id),res.locals.user.id,input.data));
+  });
+  // Ride details are public. This stream exposes no chat activity or identities.
+  router.get('/:id/ride-events',privateResponse,async(req,res)=>{
+    if(!z.uuid().safeParse(req.params.id).success)return res.status(404).end();
+    await rideEvents(pool!,req,res,String(req.params.id));
   });
   router.get('/:id/events',privateResponse,requireUser,async(req,res)=>{
     if(!z.uuid().safeParse(req.params.id).success)return res.status(404).end();

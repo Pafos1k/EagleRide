@@ -66,27 +66,27 @@ export default function Dashboard() {
           {index === 0 && <Link to="/find" className="text-black text-xs sm:text-sm font-bold uppercase tracking-wider flex items-center hover:underline group">Find More <ChevronRight size={16} className="ml-1 group-hover:translate-x-1 transition-transform" /></Link>}
         </div>
         {group.rides.length ? <div className="grid grid-cols-1 gap-3 sm:gap-4">{group.rides.map(ride =>
-          <div key={ride.id}><Link to={'/ride/' + ride.id} className="group">
-            <div className="bg-white border border-neutral-200 rounded-2xl p-4 sm:p-6 hover:border-black transition-all flex items-center gap-3 sm:gap-6">
-              <div className="w-18 sm:w-24 shrink-0 flex flex-col justify-center">
+          <div key={ride.id} className="relative bg-white border border-neutral-200 rounded-2xl hover:border-black transition-all group/card grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 sm:gap-x-6 p-4 sm:p-6"><Link to={'/ride/' + ride.id} className={index === 1 ? "group contents after:absolute after:inset-0 after:rounded-2xl focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-black focus-visible:after:ring-offset-2" : "group contents"}>
+            <div className="contents">
+              <div className="col-start-1 row-start-1 w-18 sm:w-24 shrink-0 flex flex-col justify-center">
                 <span className="font-bold text-neutral-900 text-base sm:text-xl leading-tight whitespace-nowrap">{new Date(ride.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                 <span className="font-bold text-neutral-400 text-[10px] sm:text-xs uppercase tracking-wider mt-0.5">{new Date(ride.departureTime).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
               </div>
-              <div className="flex-1 min-w-0 flex flex-col justify-center border-l border-neutral-100 pl-3 sm:pl-6">
+              <div className="col-start-2 row-start-1 min-w-0 flex flex-col justify-center border-l border-neutral-100 pl-3 sm:pl-6">
                 <h3 className="text-base sm:text-xl font-bold text-neutral-900 tracking-tight leading-tight truncate">{locationLabel(ride.destination)}</h3>
                 <div className="flex items-center text-neutral-400 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest mt-1 truncate">
                   <MapPin size={10} className="mr-1 shrink-0" /><span className="truncate">From {locationLabel(ride.origin)}</span>
                 </div>
                 <p className="text-xs text-neutral-500 mt-1">{ride.hostUserId === user?.id ? 'Hosted by you' : 'Joined'}</p>
               </div>
-              <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-                <span className="text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded uppercase tracking-wider bg-neutral-100 text-neutral-600">{ride.cancelledAt ? 'Cancelled' : index === 1 ? 'Past' : ride.seatsTaken + '/' + ride.seatsTotal}</span>
+              {index !== 1 && <div className="col-start-3 row-start-1 flex items-center gap-2 sm:gap-4 shrink-0">
+                <span className="text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded uppercase tracking-wider bg-neutral-100 text-neutral-600">{ride.cancelledAt ? 'Cancelled' : ride.seatsTaken + '/' + ride.seatsTotal}</span>
                 <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-400 group-hover:bg-black group-hover:text-white group-hover:border-black transition-all">
                   <ChevronRight size={14} className="sm:w-4 sm:h-4" />
                 </div>
-              </div>
+              </div>}
             </div>
-          </Link>{ride.canRate && <RateParticipants rideId={ride.id} remaining={ride.ratingsRemaining ?? 0} />}</div>)}</div> : index === 0 ?
+          </Link>{index === 1 && <RateParticipants rideId={ride.id} />}</div>)}</div> : index === 0 ?
           <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl sm:rounded-[2.5rem] p-8 sm:p-12 md:p-16 text-center">
             <div className="w-16 h-16 sm:w-20 sm:h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6"><Search size={28} className="text-slate-300 sm:w-8 sm:h-8" /></div>
             <h3 className="text-xl sm:text-2xl font-black text-slate-800 uppercase italic">No Active Rides</h3>

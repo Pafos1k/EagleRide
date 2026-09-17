@@ -612,7 +612,23 @@ test('reputation: Activity offers recipient-specific outcomes, persists rated st
     if(route.request().method()==='POST'){const body=route.request().postDataJSON();submissions.push(body);recipients.find(p=>p.profile.id===body.recipientUserId).rating={outcome:body.outcome,reason:body.reason??null};}
     return route.fulfill({json:{canRate:true,recipients}});
   });
-  await page.goto('/#/dashboard');await page.getByRole('button',{name:'Rate participants',exact:true}).click();
+  await page.goto('/#/dashboard');
+  const rate=page.getByRole('button',{name:'Rate riders',exact:true});
+  const cardHeight=await rate.locator('..').locator('..').boundingBox();
+  const buttonBox=await rate.boundingBox();
+  expect(cardHeight).not.toBeNull();expect(buttonBox).not.toBeNull();
+  expect(Math.abs(buttonBox!.y+buttonBox!.height/2-cardHeight!.y-cardHeight!.height/2)).toBeLessThan(2);
+  expect(buttonBox!.x).toBeGreaterThan(cardHeight!.x+cardHeight!.width/2);
+  await expect(page.getByRole('region',{name:'Past',exact:true}).getByText('Past',{exact:true})).toHaveCount(1);
+  expect(buttonBox!.y+buttonBox!.height).toBeLessThanOrEqual(cardHeight!.y+cardHeight!.height-16);
+  await page.setViewportSize({width:1280,height:900});
+  const wideCard=await rate.locator('..').locator('..').boundingBox();
+  const wideButton=await rate.boundingBox();
+  expect(Math.abs(wideButton!.y+wideButton!.height/2-wideCard!.y-wideCard!.height/2)).toBeLessThan(2);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+  await page.setViewportSize({width:390,height:844});
+  await rate.click();
+  await expect(page).toHaveURL(/#\/dashboard$/);
   await expect(page.getByText('Was Normal Rider reliable for this ride?',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'⚠ There was an issue',exact:true}).first().click();
   await expect(page.getByRole('button',{name:'No-show',exact:true})).toBeVisible();
@@ -625,11 +641,53 @@ test('reputation: Activity offers recipient-specific outcomes, persists rated st
   await expect(page.getByRole('button',{name:'No-show',exact:true})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Significantly late',exact:true})).toHaveCount(0);
   await page.getByRole('button',{name:'Late cancellation',exact:true}).click();
-  await expect(page.getByRole('button',{name:'Ratings submitted',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:/^Rate riders?$/})).toHaveCount(0);
   expect(submissions).toEqual([{recipientUserId:'normal',outcome:'reliable'},{recipientUserId:'late',outcome:'issue',reason:'late_cancellation'}]);
-  await page.reload();await page.getByRole('button',{name:'Ratings submitted',exact:true}).click();
-  await expect(page.getByText('Rated · Reliable',{exact:true})).toBeVisible();
-  await expect(page.getByText('Rated · late cancellation',{exact:true})).toBeVisible();
-  await expect(page.getByRole('button',{name:'⚠ There was an issue',exact:true})).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('heading',{name:'Past',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:/^Rate riders?$|Reliable|Feedback submitted|Issue/})).toHaveCount(0);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+  recipients.splice(1);
+  await page.reload();await expect(page.getByRole('button',{name:'✓ Reliable',exact:true})).toHaveCount(0);
+  const pastLink=page.getByRole('region',{name:'Past',exact:true}).getByRole('link');
+  await expect(pastLink.locator('svg')).toHaveCount(1); // Location icon only; no navigation arrow.
+  const surface=await pastLink.locator('..').boundingBox();
+  await page.mouse.click(surface!.x+5,surface!.y+5);
+  await expect(page).toHaveURL(new RegExp('#/ride/'+ride.id+'$'));
+  await page.goto('/#/dashboard');
+  recipients[0].rating={outcome:'issue',reason:'no_show'};
+  await page.reload();await expect(page.getByRole('button',{name:'⚠ Issue',exact:true})).toHaveCount(0);
+  recipients[0].rating=null;
+  await page.reload();await expect(page.getByRole('button',{name:'Rate rider',exact:true})).toBeVisible();
+});
+
+test('ride detail updates people and Group Members across join, leave and reconnect without reloading routes',async({browser})=>{
+  const a=await browser.newContext(),b=await browser.newContext();
+  try{
+    const host=await a.newPage(),guest=await b.newPage();await signIn(host);const ride=await createFutureRide(host);await signIn(guest,'bob');
+    let routingCalls=0;host.on('request',request=>{if(request.url().endsWith('/route-snapshot'))routingCalls++;});
+    await host.goto('/#/ride/'+ride.id);await expect(host.getByRole('heading',{name:'Group Members (1/4)',exact:true})).toBeVisible();
+    await expect.poll(()=>routingCalls).toBe(1);
+    // The observer must stay on the same document throughout remote mutations.
+    let observerNavigations=0;
+    host.on('framenavigated',frame=>{if(frame===host.mainFrame())observerNavigations++;});
+    const stream=await host.request.get('/api/rides/not-a-uuid/ride-events');
+    expect(stream.status()).toBe(404);
+    await guest.goto('/#/ride/'+ride.id);await guest.getByRole('button',{name:'Join ride',exact:true}).click();
+    await expect(host.getByRole('heading',{name:'Group Members (2/4)',exact:true})).toBeVisible();
+    await expect(host.getByRole('link',{name:'Bob Eagle',exact:true})).toBeVisible();
+    await expect(host.getByText('2 of 4 joined',{exact:true})).toBeVisible();
+    await guest.getByRole('button',{name:'Leave ride',exact:true}).click();
+    await expect(host.getByRole('heading',{name:'Group Members (1/4)',exact:true})).toBeVisible();
+    await expect(host.getByRole('link',{name:'Bob Eagle',exact:true})).toHaveCount(0);
+    await expect(host.getByText('1 of 4 joined',{exact:true})).toBeVisible();
+    await a.setOffline(true);await guest.getByRole('button',{name:'Join ride',exact:true}).click();
+    await a.setOffline(false);
+    await expect(host.getByRole('heading',{name:'Group Members (2/4)',exact:true})).toBeVisible();
+    await expect(host.getByRole('link',{name:'Bob Eagle',exact:true})).toBeVisible();
+    expect(routingCalls).toBe(1);
+    expect(observerNavigations).toBe(0);
+    await host.getByRole('button',{name:'Cancel ride',exact:true}).click();
+    await expect(guest.getByText('Cancelled — this ride cannot be joined.',{exact:true})).toBeVisible();
+  }finally{await Promise.allSettled([a.close(),b.close()]);}
 });
