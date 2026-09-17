@@ -666,26 +666,33 @@ test('ride detail updates people and Group Members across join, leave and reconn
   try{
     const host=await a.newPage(),guest=await b.newPage();await signIn(host);const ride=await createFutureRide(host);await signIn(guest,'bob');
     let routingCalls=0;host.on('request',request=>{if(request.url().endsWith('/route-snapshot'))routingCalls++;});
-    await host.goto('/#/ride/'+ride.id);await expect(host.getByRole('heading',{name:'Group Members (1/4)',exact:true})).toBeVisible();
-    await expect.poll(()=>routingCalls).toBe(1);
+    const initialSnapshot=host.waitForResponse(response=>response.url().endsWith('/route-snapshot') && response.request().method()==='POST');
+    await host.goto('/#/ride/'+ride.id);await expect(host.getByRole('heading',{name:'Group Members (1/2)',exact:true})).toBeVisible();
+    await (await initialSnapshot).finished();
+    // Wait for the initial route response to be rendered before measuring remote updates.
+    await expect(host.getByText('Not updated',{exact:false})).toBeVisible();
+    const initialRoutingCalls=routingCalls;
+    expect(initialRoutingCalls).toBeGreaterThan(0);
     // The observer must stay on the same document throughout remote mutations.
     let observerNavigations=0;
     host.on('framenavigated',frame=>{if(frame===host.mainFrame())observerNavigations++;});
     const stream=await host.request.get('/api/rides/not-a-uuid/ride-events');
     expect(stream.status()).toBe(404);
     await guest.goto('/#/ride/'+ride.id);await guest.getByRole('button',{name:'Join ride',exact:true}).click();
-    await expect(host.getByRole('heading',{name:'Group Members (2/4)',exact:true})).toBeVisible();
+    await expect(host.getByRole('heading',{name:'Group Members (2/2)',exact:true})).toBeVisible();
     await expect(host.getByRole('link',{name:'Bob Eagle',exact:true})).toBeVisible();
-    await expect(host.getByText('2 of 4 joined',{exact:true})).toBeVisible();
+    await expect(host.getByText('2 of 2 joined',{exact:true})).toBeVisible();
+    expect(routingCalls).toBe(initialRoutingCalls);
     await guest.getByRole('button',{name:'Leave ride',exact:true}).click();
-    await expect(host.getByRole('heading',{name:'Group Members (1/4)',exact:true})).toBeVisible();
+    await expect(host.getByRole('heading',{name:'Group Members (1/2)',exact:true})).toBeVisible();
     await expect(host.getByRole('link',{name:'Bob Eagle',exact:true})).toHaveCount(0);
-    await expect(host.getByText('1 of 4 joined',{exact:true})).toBeVisible();
+    await expect(host.getByText('1 of 2 joined',{exact:true})).toBeVisible();
+    expect(routingCalls).toBe(initialRoutingCalls);
     await a.setOffline(true);await guest.getByRole('button',{name:'Join ride',exact:true}).click();
     await a.setOffline(false);
-    await expect(host.getByRole('heading',{name:'Group Members (2/4)',exact:true})).toBeVisible();
+    await expect(host.getByRole('heading',{name:'Group Members (2/2)',exact:true})).toBeVisible();
     await expect(host.getByRole('link',{name:'Bob Eagle',exact:true})).toBeVisible();
-    expect(routingCalls).toBe(1);
+    expect(routingCalls).toBe(initialRoutingCalls);
     expect(observerNavigations).toBe(0);
     await host.getByRole('button',{name:'Cancel ride',exact:true}).click();
     await expect(guest.getByText('Cancelled — this ride cannot be joined.',{exact:true})).toBeVisible();
