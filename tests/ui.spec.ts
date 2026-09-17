@@ -553,6 +553,7 @@ test('chat synchronizes messages, reactions and deletion across participants and
 
 test('reputation: Group Members and chat identities open the shared read-only profile; own profile stays editable',async({browser})=>{
   const hostContext=await browser.newContext(),guestContext=await browser.newContext();
+  let releaseLogout=()=>{};
   try{
     const host=await hostContext.newPage(),guest=await guestContext.newPage();
     await signIn(host);const ride=await createFutureRide(host);
@@ -579,11 +580,25 @@ test('reputation: Group Members and chat identities open the shared read-only pr
     await host.getByRole('button',{name:'Cancel',exact:true}).click();
     await expect(host.getByRole('button',{name:'Sign Out',exact:true})).toBeVisible();
     await guest.getByRole('link',{name:'Profile',exact:true}).first().click();
+    // Hold the real logout request until the public profile has rendered. The
+    // old Profile handler redirected to Sign In after this newer navigation.
+    const logoutGate=new Promise<void>(resolve=>{releaseLogout=resolve;});
+    await guest.route('**/api/auth/logout',async route=>{await logoutGate;await route.continue();});
+    const logoutResponse=guest.waitForResponse(response=>response.url().endsWith('/api/auth/logout'));
     await guest.getByRole('button',{name:'Sign Out',exact:true}).click();
     await guest.goto('/#/profile/'+hostUser.id);
     await expect(guest.getByRole('heading',{name:'Alice Eagle',exact:true})).toBeVisible();
+    releaseLogout();
+    expect((await logoutResponse).status()).toBe(204);
+    await expect(guest.getByRole('link',{name:'Sign in',exact:true}).first()).toBeVisible();
+    await expect(guest).toHaveURL(new RegExp('/#/profile/'+hostUser.id+'$'));
+    await expect(guest.getByRole('heading',{name:'Alice Eagle',exact:true})).toBeVisible();
     await expect(guest.getByText(hostUser.bcEmail,{exact:true})).toHaveCount(0);
-  }finally{await guestContext.close();await hostContext.close();}
+    await expect(guest.getByRole('button',{name:'Edit profile',exact:true})).toHaveCount(0);
+    await expect(guest.getByRole('button',{name:'Sign Out',exact:true})).toHaveCount(0);
+    await guest.goto('/#/profile');
+    await expect(guest).toHaveURL(/#\/signin\?returnTo=%2Fprofile$/);
+  }finally{releaseLogout();await guestContext.close();await hostContext.close();}
 });
 
 test('reputation: Activity offers recipient-specific outcomes, persists rated state and stays compact on mobile',async({page})=>{

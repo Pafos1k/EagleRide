@@ -82,7 +82,12 @@ export default function Profile() {
       </form>
       {!readOnly && !editing && <div className="mt-3">
         <button disabled={busy} className="flex w-full items-center justify-center gap-2 px-4 py-3 border border-slate-200 rounded-xl text-neutral-700 bg-slate-50 font-bold" onClick={async()=>{
-          setBusy(true);try{await signOut();}catch{}finally{setBusy(false);navigate('/signin');}
+          const signOutFrom = window.location.href;
+          setBusy(true);try{await signOut();}catch{}finally{
+            setBusy(false);
+            // A delayed logout must not override navigation to a public page.
+            if (window.location.href === signOutFrom) navigate('/signin');
+          }
         }}><LogOut size={18} />Sign Out</button>
       </div>}
     </div>
