@@ -1,3 +1,4 @@
+import { publicProfiles } from './reputation';
 import {locationSearchTerms} from '../shared/campuses';
 import type { RideSearch } from '../shared/rideSearch';
 import type { Pool, PoolClient } from 'pg';
@@ -32,7 +33,11 @@ export async function listRides(pool: Pool, search: RideSearch = {}): Promise<Pe
 }
 export async function getRide(db: Pool | PoolClient, id: string): Promise<PersistedRide | null> {
   const result = await db.query(`${selectRides} WHERE r.id = $1`, [id]);
-  return result.rows[0] ? toRide(result.rows[0]) : null;
+  if(!result.rows[0])return null;
+  const ride=toRide(result.rows[0]);
+  const profiles=await publicProfiles(db,ride.participants.filter(p=>!p.leftAt).map(p=>p.userId));
+  ride.participants=ride.participants.map(p=>({...p,profile:profiles.find(u=>u.id===p.userId)}));
+  return ride;
 }
 export async function createRide(pool: Pool, input: CreateRideInput, actingUserId: string): Promise<PersistedRide> {
   const client = await pool.connect();
@@ -62,12 +67,20 @@ export async function createRide(pool: Pool, input: CreateRideInput, actingUserI
 
 export async function userRides(pool: Pool, userId: string): Promise<ActivityRide[]> {
   const result = await pool.query(`${selectRides} WHERE r.host_user_id=$1 OR EXISTS (
-    SELECT 1 FROM ride_participants mine WHERE mine.ride_id=r.id AND mine.user_id=$1 AND mine.left_at IS NULL
+    SELECT 1 FROM ride_participants mine WHERE mine.ride_id=r.id AND mine.user_id=$1 AND (mine.left_at IS NULL OR
+      (r.departure_at<=clock_timestamp() AND mine.joined_at<=r.departure_at AND mine.left_at>=r.departure_at-interval '2 hours'))
   ) ORDER BY r.departure_at,r.id`, [userId]);
+  const eligibility=await pool.query(`SELECT r.id,
+    count(p.user_id) FILTER (WHERE a.ride_id IS NULL)::int AS remaining
+    FROM rides r JOIN reputation_memberships mine ON mine.ride_id=r.id AND mine.user_id=$1 AND mine.eligibility='joined'
+    JOIN reputation_memberships p ON p.ride_id=r.id AND p.user_id<>$1 AND p.eligibility IS NOT NULL
+    LEFT JOIN reliability_ratings a ON a.ride_id=r.id AND a.rater_user_id=$1 AND a.recipient_user_id=p.user_id
+    WHERE r.cancelled_at IS NULL AND r.departure_at<=clock_timestamp() AND r.departure_at>clock_timestamp()-interval '7 days'
+    GROUP BY r.id`,[userId]);
   const now = Date.now();
   return result.rows.map(row => {
     const ride = toRide(row);
-    return { ...ride, category: rideCategory(ride, now), role: ride.hostUserId === userId ? 'host' : 'participant',
+    return { ...ride, canRate: eligibility.rows.some(r=>r.id===ride.id), ratingsRemaining: eligibility.rows.find(r=>r.id===ride.id)?.remaining ?? 0, category: rideCategory(ride, now), role: ride.hostUserId === userId ? 'host' : 'participant',
       membership: ride.participants.some(p => p.userId === userId && !p.leftAt) ? 'active' : 'left' };
   });
 }

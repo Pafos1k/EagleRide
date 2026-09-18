@@ -1,4 +1,6 @@
-import {chatEvents} from './chatEvents';
+import { ratingInput } from '../shared/reputation';
+import { rideRatings, submitRating } from './reputation';
+import {chatEvents,rideEvents} from './chatEvents';
 import {rideSearchSchema} from '../shared/rideSearch';
 import { createRoutingService, routingQuota } from './routing';
 import { rideRouteSnapshot } from './routeSnapshots';
@@ -32,6 +34,21 @@ export function rideRoutes(requireUser: RequestHandler) {
   });
   router.get('/', async (req, res) => { const search=rideSearchSchema.safeParse(req.query); if(!search.success)return res.status(400).json({error:'Invalid ride search.'}); res.json(await listRides(pool!,search.data)); });
   router.get('/mine', privateResponse, requireUser, async (_req, res) => res.json(await userRides(pool!, res.locals.user.id)));
+  router.get('/:id/ratings',privateResponse,requireUser,async(req,res)=>{
+    if(!z.uuid().safeParse(req.params.id).success)return res.status(404).json({error:'Ride not found.'});
+    res.json(await rideRatings(pool!,String(req.params.id),res.locals.user.id));
+  });
+  router.post('/:id/ratings',privateResponse,sameOrigin,requireUser,async(req,res)=>{
+    if(!z.uuid().safeParse(req.params.id).success)return res.status(404).json({error:'Ride not found.'});
+    const input=ratingInput.safeParse(req.body);
+    if(!input.success)return res.status(400).json({error:'Invalid rating.'});
+    res.json(await submitRating(pool!,String(req.params.id),res.locals.user.id,input.data));
+  });
+  // Ride details are public. This stream exposes no chat activity or identities.
+  router.get('/:id/ride-events',privateResponse,async(req,res)=>{
+    if(!z.uuid().safeParse(req.params.id).success)return res.status(404).end();
+    await rideEvents(pool!,req,res,String(req.params.id));
+  });
   router.get('/:id/events',privateResponse,requireUser,async(req,res)=>{
     if(!z.uuid().safeParse(req.params.id).success)return res.status(404).end();
     await chatEvents(pool!,req,res,res.locals.user.id,String(req.params.id));

@@ -1,3 +1,4 @@
+import { publicAvatarPath } from './reputation';
 import type { Pool } from 'pg';
 import { RideOperationError } from './rideOperations';
 import type { RideChat } from '../shared/messages';
@@ -34,7 +35,7 @@ export async function rideChat(pool: Pool, rideId: string, userId: string, body?
     const revision=(await client.query('SELECT chat_revision::text FROM rides WHERE id=$1',[rideId])).rows[0].chat_revision;
     await client.query('COMMIT');
     return { revision, cancelledAt: ride.cancelled_at?.toISOString() ?? null,
-      messages: result.rows.map(row => ({ ...row, createdAt: row.createdAt.toISOString() })) };
+      messages: result.rows.map(row => ({ ...row, senderAvatarUrl: row.senderAvatarUrl ? publicAvatarPath(row.senderUserId, row.senderAvatarUrl) : null, createdAt: row.createdAt.toISOString() })) };
   } catch (error) { await client.query('ROLLBACK'); throw error; }
   finally { client.release(); }
 }

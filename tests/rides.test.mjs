@@ -89,9 +89,9 @@ after(async () => {
 
 test('migrations work on an empty database and are repeatable', async () => {
   assert.equal(await count(), 0);
-  assert.deepEqual((await db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")).rows.map(r => r.table_name), ['message_reactions', 'messages', 'ride_participants', 'ride_route_snapshots', 'rides', 'schema_migrations', 'users']);
+  assert.deepEqual((await db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")).rows.map(r => r.table_name), ['message_reactions', 'messages', 'reliability_ratings', 'reputation_memberships', 'ride_participants', 'ride_route_snapshots', 'rides', 'schema_migrations', 'users']);
   await migrate();
-  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '9');
+  assert.equal((await db.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '11');
   assert.equal((await db.query("SELECT full_name FROM users WHERE id='u1'")).rows[0].full_name, 'Baldwin Eagle');
 });
 test('POST creates a persisted ride and host participation with server identity and timestamps', async () => {
@@ -494,7 +494,7 @@ test('operations: missing/departed rides and supplied identity fields are reject
 test('operations: Activity uses current-user PostgreSQL membership and accurate categories', async () => {
   const host = await newActor(), guest = await newActor(), stranger = await newActor();
   const upcoming = await newRide(host), past = await newRide(host, { departureTime: new Date(Date.now() - 1000).toISOString() });
-  const cancelled = await newRide(host, { departureTime: new Date(Date.now() - 1000).toISOString() });
+  const cancelled = await newRide(host);
   await operate(host, cancelled.id, 'cancel');
   await operate(guest, upcoming.id, 'join');
   const response = await guest.client.request('/api/rides/mine');
@@ -708,7 +708,7 @@ test('avatar uploads use authenticated stable owner paths, reject invalid files 
   assert.equal((await (await owner.client.request('/api/auth/me')).json()).avatarUrl,previous.avatarUrl);
   const ride=await newRide(owner);await operate(other,ride.id,'join');
   await owner.client.request('/api/rides/'+ride.id+'/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:'Photo identity'})});
-  const chat=await (await other.client.request('/api/rides/'+ride.id+'/messages')).json();assert.equal(chat.messages[0].senderAvatarUrl,previous.avatarUrl);
+  const chat=await (await other.client.request('/api/rides/'+ride.id+'/messages')).json();assert.equal(chat.messages[0].senderAvatarUrl,(await (await fetch(origin+'/api/users/'+owner.user.id)).json()).avatarUrl);
 });
 
 test('Now rides get a server-owned ten-minute grace window; expired rides stay out of discovery and joining',async()=>{
@@ -837,4 +837,246 @@ test('search: nearby campus opt-in works at either endpoint without rewriting ac
   const reverseMain=await newRide(host,{origin:{name:airport},destination:{name:'Boston College'}}),reverseNewton=await newRide(host,{origin:{name:airport},destination:{name:'Newton Campus'}});
   assert.deepEqual(new Set((await run({from:airport,to:'Newton Campus',nearbyCampuses:'true'})).map(r=>r.id)),new Set([reverseMain.id,reverseNewton.id]));
   assert.deepEqual((await run({from:'Unrecognized campus',to:airport,nearbyCampuses:'true'})),[]);
+});
+
+const rate = (actor,ride,recipient,outcome='reliable',reason,extra={}) => actor.client.request(`/api/rides/${ride.id}/ratings`,{
+  method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recipientUserId:recipient.user.id,outcome,...(reason?{reason}:{}),...extra})});
+const ratings = async (actor,ride) => { const response=await actor.client.request(`/api/rides/${ride.id}/ratings`);assert.equal(response.status,200);return response.json(); };
+const profile = async actor => {const response=await fetch(origin+'/api/users/'+actor.user.id);assert.equal(response.status,200);return response.json();};
+async function pastMemberships(ride) {
+  // Advance a real joined ride's clock fixture; production eligibility uses DB wall time.
+  await db.query("UPDATE rides SET departure_at=clock_timestamp()-interval '1 minute' WHERE id=$1",[ride.id]);
+  await db.query("UPDATE ride_participants SET joined_at=(SELECT departure_at-interval '1 day' FROM rides WHERE id=$1) WHERE ride_id=$1",[ride.id]);
+}
+async function ratingTrip() {
+  const host=await newActor(),guest=await newActor(),other=await newActor();const ride=await newRide(host);
+  assert.equal((await operate(guest,ride.id,'join')).status,200);assert.equal((await operate(other,ride.id,'join')).status,200);
+  await pastMemberships(ride);return {host,guest,other,ride};
+}
+test('reputation: reliable, no-show and significantly late outcomes use authenticated participants, including host',async()=>{
+  const {host,guest,other,ride}=await ratingTrip();
+  assert.equal((await rate(host,ride,guest)).status,200);
+  assert.equal((await rate(guest,ride,host,'issue','no_show')).status,200);
+  assert.equal((await rate(other,ride,guest,'issue','significantly_late')).status,200);
+  const state=await ratings(host,ride);assert.equal(state.recipients.find(p=>p.profile.id===guest.user.id).rating.outcome,'reliable');
+  const reputation=(await profile(guest)).reputation;
+  assert.equal(reputation.ratingCount,2);assert.equal(reputation.reliableCount,1);assert.equal(reputation.issueCount,1);assert.equal(reputation.reliabilityPercent,null);assert.equal(reputation.rideCount,1);
+});
+test('reputation: exact two-hour boundary and late leavers only permit late cancellation; early leavers excluded',async()=>{
+  const {host,guest,other,ride}=await ratingTrip();
+  await db.query("UPDATE ride_participants SET left_at=(SELECT departure_at-interval '2 hours' FROM rides WHERE id=$1) WHERE ride_id=$1 AND user_id=$2",[ride.id,guest.user.id]);
+  await db.query("UPDATE ride_participants SET left_at=(SELECT departure_at-interval '2 hours 1 second' FROM rides WHERE id=$1) WHERE ride_id=$1 AND user_id=$2",[ride.id,other.user.id]);
+  const state=await ratings(host,ride);assert.equal(state.recipients.length,1);assert.equal(state.recipients[0].eligibility,'late_cancellation');
+  for(const [outcome,reason] of [['reliable',undefined],['issue','no_show'],['issue','significantly_late']])assert.equal((await rate(host,ride,guest,outcome,reason)).status,400);
+  assert.equal((await rate(host,ride,guest,'issue','late_cancellation')).status,200);
+  assert.equal((await rate(host,ride,other,'issue','late_cancellation')).status,403);
+  assert.equal((await rate(guest,ride,host)).status,403);
+  const history=await (await guest.client.request('/api/rides/mine')).json();assert.ok(history.some(r=>r.id===ride.id&&!r.canRate));
+  const early=await (await other.client.request('/api/rides/mine')).json();assert.ok(!early.some(r=>r.id===ride.id));
+});
+test('reputation: leaving inside two hours and after departure retains correct historical eligibility',async()=>{
+  const {host,guest,other,ride}=await ratingTrip();
+  await db.query("UPDATE ride_participants SET left_at=(SELECT departure_at-interval '30 minutes' FROM rides WHERE id=$1) WHERE ride_id=$1 AND user_id=$2",[ride.id,other.user.id]);
+  assert.equal((await operate(guest,ride.id,'leave')).status,200);
+  const state=await ratings(host,ride);assert.equal(state.recipients.find(p=>p.profile.id===guest.user.id).eligibility,'joined');
+  assert.equal((await rate(host,ride,guest,'issue','late_cancellation')).status,400);
+  assert.equal((await rate(host,ride,guest)).status,200);
+  assert.equal((await rate(guest,ride,host)).status,200);
+  assert.equal((await rate(guest,ride,other,'issue','late_cancellation')).status,200);
+  const activity=await (await guest.client.request('/api/rides/mine')).json();assert.ok(activity.some(r=>r.id===ride.id&&r.category==='past'&&r.canRate&&r.ratingsRemaining===0));
+});
+test('reputation: future/cancelled rides cannot be rated and post-departure cancellation is rejected',async()=>{
+  const host=await newActor(),guest=await newActor(),ride=await newRide(host);
+  await operate(guest,ride.id,'join');
+  assert.equal((await ratings(host,ride)).canRate,false);assert.equal((await rate(host,ride,guest)).status,403);
+  assert.equal((await operate(host,ride.id,'cancel')).status,200);await pastMemberships(ride);
+  assert.equal((await ratings(host,ride)).canRate,false);assert.equal((await rate(host,ride,guest)).status,403);
+  const live=await newRide(host);await operate(guest,live.id,'join');await pastMemberships(live);
+  assert.equal((await operate(host,live.id,'cancel')).status,409);
+  assert.equal((await db.query('SELECT cancelled_at FROM rides WHERE id=$1',[live.id])).rows[0].cancelled_at,null);
+  assert.equal((await rate(host,live,guest)).status,200);
+});
+test('reputation: anonymous, outsider, self, spoofed identity and invalid outcome/reason rejected',async()=>{
+  const {host,guest,ride}=await ratingTrip(),outside=await newActor();
+  assert.equal((await rate({client:cookieClient(origin)},ride,guest)).status,401);
+  assert.equal((await rate(outside,ride,guest)).status,403);assert.equal((await rate(host,ride,outside)).status,403);
+  assert.equal((await rate(host,ride,host)).status,400);
+  assert.equal((await rate(host,ride,guest,'reliable',undefined,{raterUserId:outside.user.id})).status,400);
+  for(const body of [{outcome:'bad'},{outcome:'issue'},{outcome:'issue',reason:'bad'},{outcome:'reliable',reason:'no_show'},{score:100}])assert.equal((await rate(host,ride,guest,'reliable',undefined,body)).status,400);
+  const rejected=await fetch(origin+`/api/rides/${ride.id}/ratings`,{method:'POST',headers:{Origin:'https://evil.example','Content-Type':'application/json',Cookie:[...host.client.jar].map(([k,v])=>k+'='+v).join('; ')},body:JSON.stringify({recipientUserId:guest.user.id,outcome:'reliable'})});assert.equal(rejected.status,403);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM reliability_ratings WHERE ride_id=$1',[ride.id])).rows[0].n,0);
+});
+test('reputation: concurrent identical retries are idempotent, conflicts immutable and DB constraints enforced',async()=>{
+  const {host,guest,other,ride}=await ratingTrip();
+  const concurrent=await Promise.allSettled([rate(host,ride,guest),rate(host,ride,guest)]);
+  for(const result of concurrent){assert.equal(result.status,'fulfilled');assert.equal(result.value.status,200);}
+  assert.equal((await rate(host,ride,guest,'issue','no_show')).status,409);
+  const conflict=await Promise.allSettled([rate(other,ride,host),rate(other,ride,host,'issue','no_show')]);
+  assert.deepEqual(conflict.map(r=>{assert.equal(r.status,'fulfilled');return r.value.status;}).sort(),[200,409]);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM reliability_ratings WHERE ride_id=$1',[ride.id])).rows[0].n,2);
+  await assert.rejects(db.query("UPDATE reliability_ratings SET outcome='issue',reason='no_show' WHERE ride_id=$1",[ride.id]),/immutable/);
+  await assert.rejects(db.query('DELETE FROM reliability_ratings WHERE ride_id=$1',[ride.id]),/immutable/);
+  const insert=(rater,recipient,outcome,reason)=>db.query('INSERT INTO reliability_ratings(ride_id,rater_user_id,recipient_user_id,outcome,reason) VALUES($1,$2,$3,$4,$5)',[ride.id,rater,recipient,outcome,reason]);
+  await assert.rejects(insert(host.user.id,host.user.id,'reliable',null),e=>e.code==='23514');
+  await assert.rejects(insert(host.user.id,other.user.id,'issue',null),e=>e.code==='23514');
+  await assert.rejects(insert(host.user.id,'missing','reliable',null),e=>e.code==='23503');
+});
+test('reputation: submission window closes after seven days but identical retries remain successful',async()=>{
+  const {host,guest,other,ride}=await ratingTrip();assert.equal((await rate(host,ride,guest)).status,200);
+  await db.query("UPDATE rides SET departure_at=clock_timestamp()-interval '8 days' WHERE id=$1",[ride.id]);
+  await db.query("UPDATE ride_participants SET joined_at=clock_timestamp()-interval '9 days' WHERE ride_id=$1",[ride.id]);
+  assert.equal((await ratings(host,ride)).canRate,false);
+  assert.equal((await rate(host,ride,guest)).status,200);assert.equal((await rate(host,ride,other)).status,409);
+});
+test('reputation: threshold requires two distinct rides and two independent raters',async()=>{
+  const host=await newActor(),a=await newActor(),b=await newActor(),c=await newActor();
+  const trip=async people=>{const ride=await newRide(host);for(const person of people)await operate(person,ride.id,'join');await pastMemberships(ride);return ride;};
+  const first=await trip([a,b,c]);
+  assert.equal((await rate(a,first,host)).status,200);
+  assert.equal((await profile(host)).reputation.reliabilityPercent,null); // one ride / one rater
+  for(const person of [b,c])assert.equal((await rate(person,first,host)).status,200);
+  assert.equal((await profile(host)).reputation.reliabilityPercent,null); // three raters but one ride
+  const second=await trip([a]);await rate(a,second,host);
+  assert.equal((await profile(host)).reputation.reliabilityPercent,100);
+  const third=await trip([a]);await rate(a,third,host,'issue','no_show');
+  const rep=(await profile(host)).reputation;assert.equal(rep.reliabilityPercent,80);assert.equal(rep.ratingCount,5);assert.equal(rep.rideCount,3);assert.equal(rep.distinctRaterCount,3);
+  const target=await newActor();
+  for(const [i,rater] of [a,b].entries()){
+    const ride=await newRide(target);await operate(rater,ride.id,'join');await pastMemberships(ride);
+    assert.equal((await rate(rater,ride,target,i?'issue':'reliable',i?'no_show':undefined)).status,200);
+    const result=(await profile(target)).reputation;
+    assert.equal(result.reliabilityPercent,i?50:null);
+    assert.equal(result.distinctRideCount,i+1);assert.equal(result.distinctRaterCount,i+1);
+  }
+  const future=await newRide(target);
+  const detail=await (await fetch(origin+'/api/rides/'+future.id)).json();
+  assert.equal(detail.participants.find(p=>p.userId===target.user.id).profile.reputation.reliabilityPercent,50);
+  const solo=await newActor();for(let i=0;i<3;i++){const ride=await newRide(solo);await operate(a,ride.id,'join');await pastMemberships(ride);await rate(a,ride,solo);}
+  const limited=(await profile(solo)).reputation;assert.equal(limited.ratingCount,3);assert.equal(limited.distinctRideCount,3);assert.equal(limited.distinctRaterCount,1);assert.equal(limited.reliabilityPercent,null);
+});
+test('reputation: public profiles/detail/chat allowlist identity; avatar proxy hides provider IDs and private fields',async()=>{
+  const host=await newActor(),guest=await newActor(),ride=await newRide(host);await operate(guest,ride.id,'join');
+  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
+  assert.equal((await host.client.request('/api/auth/profile/avatar',{method:'POST',headers:{'Content-Type':'image/png'},body:png})).status,200);
+  const value=await profile(host),row=(await db.query('SELECT auth_subject FROM users WHERE id=$1',[host.user.id])).rows[0];
+  assert.deepEqual(Object.keys(value).sort(),['avatarUrl','fullName','id','reputation']);
+  assert.match(value.avatarUrl,new RegExp(`^/api/users/${host.user.id}/avatar\\?v=[a-f0-9]{24}$`));
+  assert.ok(!JSON.stringify(value).includes(host.user.bcEmail));assert.ok(!JSON.stringify(value).includes(row.auth_subject));
+  const avatar=await fetch(origin+value.avatarUrl);assert.equal(avatar.status,200);assert.equal(avatar.headers.get('location'),null);assert.deepEqual(Buffer.from(await avatar.arrayBuffer()),png);
+  const detail=await (await fetch(origin+'/api/rides/'+ride.id)).json();assert.deepEqual(detail.participants.find(p=>p.userId===host.user.id).profile,value);
+  await message(host,ride.id,{body:'Public-safe identity'});const chat=await (await guest.client.request('/api/rides/'+ride.id+'/messages')).json();assert.equal(chat.messages[0].senderAvatarUrl,value.avatarUrl);
+  assert.ok(!JSON.stringify(detail).includes(row.auth_subject));assert.ok(!JSON.stringify(chat).includes(row.auth_subject));
+  const own=await (await host.client.request('/api/auth/me')).json();assert.equal(own.bcEmail,host.user.bcEmail);
+  assert.equal((await fetch(origin+'/api/users/missing')).status,404);
+  await db.query("UPDATE users SET avatar_url='https://example.com/arbitrary' WHERE id=$1",[host.user.id]);
+  assert.equal((await fetch(origin+value.avatarUrl)).status,404);
+});
+
+test('reputation: current state after a rejoin governs departure eligibility and ratings survive server restart',async()=>{
+  const host=await newActor(),guest=await newActor(),ride=await newRide(host);
+  await operate(guest,ride.id,'join');await operate(guest,ride.id,'leave');await operate(guest,ride.id,'join');
+  await pastMemberships(ride);assert.equal((await ratings(host,ride)).recipients[0].eligibility,'joined');
+  assert.equal((await rate(host,ride,guest)).status,200);
+  const before=await profile(guest);
+  await stop();await start();host.client=cookieClient(origin,host.client.jar);
+  assert.equal((await ratings(host,ride)).recipients[0].rating.outcome,'reliable');
+  assert.deepEqual(await profile(guest),before);
+});
+
+test('reputation: replacing an avatar changes its safe public/chat URL without exposing the storage identity',async()=>{
+  const host=await newActor(),guest=await newActor(),ride=await newRide(host);
+  await operate(guest,ride.id,'join');
+  await message(host,ride.id,{body:'Avatar version regression'});
+  const subject=(await db.query('SELECT auth_subject FROM users WHERE id=$1',[host.user.id])).rows[0].auth_subject;
+  const storage=`${provider.url}/storage/v1/object/public/avatars/${subject}/avatar`;
+  await db.query('UPDATE users SET avatar_url=$1 WHERE id=$2',[storage+'?v=1',host.user.id]);
+  const before=await profile(host);
+  await db.query('UPDATE users SET avatar_url=$1 WHERE id=$2',[storage+'?v=2',host.user.id]);
+  const after=await profile(host);
+  assert.notEqual(after.avatarUrl,before.avatarUrl,'A new photo must invalidate the mounted image URL/failure state');
+  assert.equal((await profile(host)).avatarUrl,after.avatarUrl,'Unchanged photos must reuse their URL');
+  const chat=await (await guest.client.request(`/api/rides/${ride.id}/messages`)).json();
+  assert.equal(chat.messages[0].senderAvatarUrl,after.avatarUrl);
+  for(const value of [before,after,chat]) {assert.ok(!JSON.stringify(value).includes(subject));assert.ok(!JSON.stringify(value).includes(storage));}
+});
+
+test('reputation: cancellation uses database time after waiting for the ride lock',async()=>{
+  const host=await newActor(),ride=await newRide(host),locker=await db.connect();
+  let pending;
+  try {
+    await locker.query('BEGIN');
+    await locker.query('SELECT id FROM rides WHERE id=$1 FOR UPDATE',[ride.id]);
+    pending=Promise.allSettled([operate(host,ride.id,'cancel')]);
+    let waiting=0;
+    for(let i=0;i<100&&!waiting;i++){
+      waiting=Number((await db.query("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT * FROM rides WHERE id=%'")).rows[0].count);
+      if(!waiting)await new Promise(resolve=>setTimeout(resolve,10));
+    }
+    assert.ok(waiting,'cancellation must wait on the membership/ride lock');
+    // Move the departure fixture across the deadline while the request waits.
+    await locker.query("UPDATE rides SET departure_at=clock_timestamp()-interval '1 second' WHERE id=$1",[ride.id]);
+    await locker.query('COMMIT');
+    const [result]=await pending;assert.equal(result.status,'fulfilled');assert.equal(result.value.status,409);
+    assert.equal((await db.query('SELECT cancelled_at FROM rides WHERE id=$1',[ride.id])).rows[0].cancelled_at,null);
+    const upcoming=await newRide(host);assert.equal((await operate(host,upcoming.id,'cancel')).status,200);
+    assert.equal((await db.query('SELECT cancelled_at<departure_at AS before FROM rides WHERE id=$1',[upcoming.id])).rows[0].before,true);
+  } finally {
+    await locker.query('ROLLBACK');locker.release();
+    if(pending)await pending;
+  }
+});
+
+async function rideStream(id) {
+  const abort=new AbortController();
+  const response=await fetch(origin+`/api/rides/${id}/ride-events`,{signal:abort.signal});
+  assert.equal(response.status,200);assert.equal(response.headers.get('content-type')?.split(';')[0],'text/event-stream');
+  const reader=response.body.getReader();let buffer='';
+  return {
+    async next(){
+      const deadline=setTimeout(()=>abort.abort(),5000);
+      try {
+        while(!buffer.includes('\n\n')){const part=await reader.read();assert.ok(!part.done,'stream closed');buffer+=new TextDecoder().decode(part.value);}
+        const end=buffer.indexOf('\n\n');const event=buffer.slice(0,end);buffer=buffer.slice(end+2);return event;
+      } finally{clearTimeout(deadline);}
+    },
+    async close(){abort.abort();await reader.cancel().catch(()=>{});}
+  };
+}
+test('ride realtime: anonymous viewers resync public membership and reputation on join, leave, cancellation and reconnect',async()=>{
+  const host=await newActor(),guest=await newActor(),ride=await newRide(host);
+  await db.query("UPDATE users SET display_name='Visible participant' WHERE id=$1",[guest.user.id]);
+  let stream=await rideStream(ride.id);
+  const changed='event: changed\ndata: {}';
+  try{
+    assert.equal(await stream.next(),changed);
+    assert.equal((await operate(guest,ride.id,'join')).status,200);assert.equal(await stream.next(),changed);
+    let detail=await(await fetch(origin+'/api/rides/'+ride.id)).json();assert.equal(detail.seatsTaken,2);
+    const member=detail.participants.find(p=>p.userId===guest.user.id);assert.equal(member.profile.fullName,'Visible participant');assert.equal(member.profile.reputation.reliabilityPercent,null);assert.ok(!('bcEmail' in member.profile));
+    assert.equal((await operate(guest,ride.id,'leave')).status,200);assert.equal(await stream.next(),changed);
+    detail=await(await fetch(origin+'/api/rides/'+ride.id)).json();assert.equal(detail.seatsTaken,1);assert.equal(detail.participants.filter(p=>!p.leftAt).length,1);
+    await stream.close();await operate(guest,ride.id,'join'); // deliberately missed notification
+    stream=await rideStream(ride.id);assert.equal(await stream.next(),changed);
+    assert.equal((await(await fetch(origin+'/api/rides/'+ride.id)).json()).seatsTaken,2);
+    await operate(host,ride.id,'cancel');assert.equal(await stream.next(),changed);
+    assert.ok((await(await fetch(origin+'/api/rides/'+ride.id)).json()).cancelledAt);
+  }finally{await stream.close();}
+  assert.equal((await fetch(origin+'/api/rides/'+randomUUID()+'/ride-events')).status,404);
+  assert.equal((await fetch(origin+'/api/rides/invalid/ride-events')).status,404);
+});
+test('ride realtime: notifications are commit-only and scoped to the requested ride, separate from chat',async()=>{
+  const host=await newActor(),ride=await newRide(host),other=await newRide(host),guest=await newActor();
+  const stream=await rideStream(ride.id),listener=new pg.Client({connectionString:databaseUrl});
+  const notices=[];await listener.connect();await listener.query('LISTEN ride_state');listener.on('notification',event=>notices.push(event.payload));
+  const client=await db.connect();
+  try{
+    await stream.next();
+    await client.query('BEGIN');await client.query('INSERT INTO ride_participants(ride_id,user_id) VALUES($1,$2)',[ride.id,guest.user.id]);await client.query('ROLLBACK');
+    await message(host,ride.id,{body:'Private chat activity'});
+    await operate(guest,other.id,'join');
+    // A listener round trip drains earlier notifications without arbitrary sleeps.
+    await listener.query('SELECT 1');assert.deepEqual(notices,[other.id]);
+    await operate(guest,ride.id,'join');
+    assert.equal(await stream.next(),'event: changed\ndata: {}');
+    await listener.query('SELECT 1');assert.deepEqual(notices,[other.id,ride.id]);
+  }finally{await client.query('ROLLBACK');client.release();await stream.close();await listener.end();}
 });
